@@ -1,0 +1,11 @@
+{
+  "codeowners": ["@LucasTor"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/LucasTor/FoxESS-T-series/",
+  "domain": "foxess_tseries",
+  "iot_class": "local_push",
+  "name": "Foxess T Series",
+  "requirements": [],
+  "version": "0.0.1"
+}
