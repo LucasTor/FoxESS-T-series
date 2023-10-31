@@ -1,6 +1,6 @@
 {
   "codeowners": ["@LucasTor"],
-  "config_flow": false,
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/LucasTor/FoxESS-T-series/",
   "domain": "foxess_tseries",

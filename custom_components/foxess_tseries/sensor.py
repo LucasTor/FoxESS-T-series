@@ -35,19 +35,14 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 
-async def async_setup_platform(
-    hass: HomeAssistantType,
-    config: ConfigType,
-    async_add_entities: Callable,
-    discovery_info: Optional[DiscoveryInfoType] = None,
-) -> None:
+async def async_setup_platform() -> None:
     """Set up the sensor platform."""
     print("SETTING UP")
     print("CONFIG")
-    print(config)
 
     sensors = [FoxESSTSeriesSensor('Measured Power')]
-    async_add_entities(sensors, update_before_add=True)
+
+    return sensors
 
 class FoxESSTSeriesSensor(SensorEntity):
     """Representation of a FoxESS T Series Inverter sensor."""
