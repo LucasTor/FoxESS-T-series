@@ -1,23 +1,15 @@
-import asyncio
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Config
-from homeassistant.core import HomeAssistant
-
 from .const import DOMAIN
-from .sensor import async_setup_platform
 
-async def async_setup(_hass: HomeAssistant, _config: Config) -> bool:
-    """Setting up this integration using YAML is not supported."""
-    return True
+async def async_setup_entry(
+    hass, entry
+) -> bool:
+    """Set up platform from a ConfigEntry."""
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = entry.data
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up this integration using UI."""
-
-    hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
-
-    controller = await async_setup_platform()
-
-    hass.data[DOMAIN][entry.entry_id]["controller"] = controller
+    # Forward the setup to the sensor platform.
+    hass.async_create_task(
+        hass.config_entries.async_forward_entry_setup(entry, "sensor")
+    )
 
     return True

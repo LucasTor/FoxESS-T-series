@@ -2,56 +2,111 @@
 import logging
 from datetime import timedelta
 from typing import Any, Callable, Dict, Optional
-
-import voluptuous as vol
-
-from random import randint
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+import socket
+import threading
+import json
+from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-    HomeAssistantType,
-)
 
-CONF_REPOS = "repositories"
-CONF_ACCESS_TOKEN = 'access_token'
-CONF_URL = 'url'
-CONF_PATH = 'path'
-CONF_NAME = 'name'
+_LOGGER = logging.getLogger(__name__)
 
-REPO_SCHEMA = vol.Schema(
-    {vol.Required(CONF_PATH): cv.string, vol.Optional(CONF_NAME): cv.string}
-)
+# TODO: Get this data from user ui cfg
+HOST = "192.168.0.129" 
+PORT = 502
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_ACCESS_TOKEN): cv.string,
-        vol.Required(CONF_REPOS): vol.All(cv.ensure_list, [REPO_SCHEMA]),
-        vol.Optional(CONF_URL): cv.url,
+async def async_setup_entry(
+    hass,
+    config_entry,
+    async_add_entities,
+):
+    inverter_sensors = {
+        'grid_power': FoxESSTSeriesSensor('grid_power', 'W'),
+        'gen_power': FoxESSTSeriesSensor('gen_power', 'W'),
+        'load_power': FoxESSTSeriesSensor('load_power', 'w'),
+        'grid_voltage_R': FoxESSTSeriesSensor('grid_voltage_R', 'V'),
+        'grid_current_R': FoxESSTSeriesSensor('grid_current_R', 'A'),
+        'grid_frequency_R': FoxESSTSeriesSensor('grid_frequency_R', 'Hz'),
+        'grid_power_R': FoxESSTSeriesSensor('grid_power_R', 'W'),
+        'grid_voltage_S': FoxESSTSeriesSensor('grid_voltage_S', 'V'),
+        'grid_current_S': FoxESSTSeriesSensor('grid_current_S', 'A'),
+        'grid_frequency_S': FoxESSTSeriesSensor('grid_frequency_S', 'Hz'),
+        'grid_power_S': FoxESSTSeriesSensor('grid_power_S', 'W'),
+        'grid_voltage_T': FoxESSTSeriesSensor('grid_voltage_T', 'V'),
+        'grid_current_T': FoxESSTSeriesSensor('grid_current_T', 'A'),
+        'grid_frequency_T': FoxESSTSeriesSensor('grid_frequency_T', 'Hz'),
+        'grid_power_T': FoxESSTSeriesSensor('grid_power_T', 'W'),
+        'PV1_voltage': FoxESSTSeriesSensor('PV1_voltage', 'V'),
+        'PV1_current': FoxESSTSeriesSensor('PV1_current', 'A'),
+        'PV1_power': FoxESSTSeriesSensor('PV1_power', 'W'),
+        'PV2_voltage': FoxESSTSeriesSensor('PV2_voltage', 'V'),
+        'PV2_current': FoxESSTSeriesSensor('PV2_current', 'A'),
+        'PV2_power': FoxESSTSeriesSensor('PV2_power', 'W'),
+        'PV3_voltage': FoxESSTSeriesSensor('PV3_voltage', 'V'),
+        'PV3_current': FoxESSTSeriesSensor('PV3_current', 'A'),
+        'PV3_power': FoxESSTSeriesSensor('PV3_power', 'W'),
+        'PV4_voltage': FoxESSTSeriesSensor('PV4_voltage', 'V'),
+        'PV4_current': FoxESSTSeriesSensor('PV4_current', 'A'),
+        'PV4_power': FoxESSTSeriesSensor('PV4_power', 'W'),
+        'boost_temperature': FoxESSTSeriesSensor('boost_temperature', '°C'),
+        'inverter_temperature': FoxESSTSeriesSensor('inverter_temperature', '°C'),
+        'ambient_temperature': FoxESSTSeriesSensor('ambient_temperature', '°C'),
+        'todays_yield': FoxESSTSeriesSensor('todays_yield', 'kWh'),
+        'total_yield': FoxESSTSeriesSensor('total_yield', 'kWh')
     }
-)
 
-async def async_setup_platform() -> None:
-    """Set up the sensor platform."""
-    print("SETTING UP")
-    print("CONFIG")
+    host = config_entry.data["ip_address"]
+    port = config_entry.data["port"]
 
-    sensors = [FoxESSTSeriesSensor('Measured Power')]
+    _LOGGER.warn(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
+    inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    inverter_socket.connect((host, port))
+    inverter_socket.setblocking(False)
 
-    return sensors
+    def handle_receive():
+        def receive_msg():
+            try:
+                data = inverter_socket.recv(512)
+                if(not data):
+                    return
+
+                is_payload_valid = validate_inverter_payload(data)
+                if(not is_payload_valid):
+                    return 
+
+                parsed_payload = parse_inverter_payload(data)
+                if(not parsed_payload):
+                    return
+                
+                _LOGGER.info(f'Received new inverter payload at {parsed_payload["timestamp"]}')
+
+                for (sensor_key, sensor) in inverter_sensors.items():
+                        sensor.received_message(parsed_payload[sensor_key])
+
+            except (BlockingIOError):
+                return # BlockingIOError is fired when no data is received by the socket
+
+        receive_msg()
+        timer = threading.Timer(1, handle_receive)
+        timer.start()
+
+    _LOGGER.info("Adding FoxESS T Series sensors to Home Assistant")
+    async_add_entities(inverter_sensors.values(), update_before_add=True)
+
+    handle_receive()
 
 class FoxESSTSeriesSensor(SensorEntity):
-    """Representation of a FoxESS T Series Inverter sensor."""
+    """Representation of a FoxESS T Series sensor."""
 
-    def __init__(self, name):
+    def __init__(self, id, unit):
         super().__init__()
-        self._name = name
+        self.id = id
+        self._name = ' '.join([part.title() for part in id.split('_')])
         self._state = None
         self._available = True
+        self._attr_native_unit_of_measurement = unit
+        # TODO: implement classes
+        # self._attr_device_class = SensorDeviceClass.ENERGY
+        # self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def name(self) -> str:
@@ -61,12 +116,7 @@ class FoxESSTSeriesSensor(SensorEntity):
     @property
     def unique_id(self) -> str:
         """Return the unique ID of the sensor."""
-        return 1
-
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return True
+        return self.id
 
     @property
     def state(self) -> Optional[str]:
@@ -76,6 +126,10 @@ class FoxESSTSeriesSensor(SensorEntity):
     def should_poll(self):
         return False
     
-    def update(self) -> None:
-        self._state = randint(0, 100)
-        self.schedule_update_ha_state()
+    def update(self):
+        return self._state
+    
+    def received_message(self, val):
+        _LOGGER.info(f'Received {self.id} state: {str(val)}')
+        self._state = str(val)
+        self.async_schedule_update_ha_state()
