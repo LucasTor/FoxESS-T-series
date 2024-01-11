@@ -97,7 +97,7 @@ def calculate_crc(msg) -> int:
     return crc.to_bytes(2, byteorder='little')
 
 def validate_inverter_payload(payload):
-    msg_len = payload[7:9]
+    msg_len = int(payload[7:9].hex(), 16)
     expected_len = 150
 
     len_valid = msg_len == expected_len
