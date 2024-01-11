@@ -64,7 +64,7 @@ value_resolution = {
 
 def parse_inverter_payload(payload):
     try:
-        values = struct.unpack('> 3x i 2x 31h i 170x', payload)
+        values = struct.unpack('> 3x i 2x 31h i 88x', payload)
         result = dict(zip(keys, values))
 
         result['timestamp'] = datetime.fromtimestamp(result['timestamp']).isoformat()
@@ -97,6 +97,15 @@ def calculate_crc(msg) -> int:
     return crc.to_bytes(2, byteorder='little')
 
 def validate_inverter_payload(payload):
+    msg_len = payload[7:9]
+    expected_len = 150
+
+    len_valid = msg_len == expected_len
+
+    if(not len_valid):
+        return False
+
+    print(int(msg_len.hex(), 16))
     expected_header = bytes.fromhex("7E7E")
     received_header = payload[0:2]
 
