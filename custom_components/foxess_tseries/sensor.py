@@ -6,7 +6,11 @@ import socket
 import threading
 import json
 from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,38 +24,38 @@ async def async_setup_entry(
     async_add_entities,
 ):
     inverter_sensors = {
-        'grid_power': FoxESSTSeriesSensor('grid_power', 'W'),
-        'gen_power': FoxESSTSeriesSensor('gen_power', 'W'),
-        'load_power': FoxESSTSeriesSensor('load_power', 'w'),
-        'grid_voltage_R': FoxESSTSeriesSensor('grid_voltage_R', 'V'),
-        'grid_current_R': FoxESSTSeriesSensor('grid_current_R', 'A'),
-        'grid_frequency_R': FoxESSTSeriesSensor('grid_frequency_R', 'Hz'),
-        'grid_power_R': FoxESSTSeriesSensor('grid_power_R', 'W'),
-        'grid_voltage_S': FoxESSTSeriesSensor('grid_voltage_S', 'V'),
-        'grid_current_S': FoxESSTSeriesSensor('grid_current_S', 'A'),
-        'grid_frequency_S': FoxESSTSeriesSensor('grid_frequency_S', 'Hz'),
-        'grid_power_S': FoxESSTSeriesSensor('grid_power_S', 'W'),
-        'grid_voltage_T': FoxESSTSeriesSensor('grid_voltage_T', 'V'),
-        'grid_current_T': FoxESSTSeriesSensor('grid_current_T', 'A'),
-        'grid_frequency_T': FoxESSTSeriesSensor('grid_frequency_T', 'Hz'),
-        'grid_power_T': FoxESSTSeriesSensor('grid_power_T', 'W'),
-        'PV1_voltage': FoxESSTSeriesSensor('PV1_voltage', 'V'),
-        'PV1_current': FoxESSTSeriesSensor('PV1_current', 'A'),
-        'PV1_power': FoxESSTSeriesSensor('PV1_power', 'W'),
-        'PV2_voltage': FoxESSTSeriesSensor('PV2_voltage', 'V'),
-        'PV2_current': FoxESSTSeriesSensor('PV2_current', 'A'),
-        'PV2_power': FoxESSTSeriesSensor('PV2_power', 'W'),
-        'PV3_voltage': FoxESSTSeriesSensor('PV3_voltage', 'V'),
-        'PV3_current': FoxESSTSeriesSensor('PV3_current', 'A'),
-        'PV3_power': FoxESSTSeriesSensor('PV3_power', 'W'),
-        'PV4_voltage': FoxESSTSeriesSensor('PV4_voltage', 'V'),
-        'PV4_current': FoxESSTSeriesSensor('PV4_current', 'A'),
-        'PV4_power': FoxESSTSeriesSensor('PV4_power', 'W'),
-        'boost_temperature': FoxESSTSeriesSensor('boost_temperature', '°C'),
-        'inverter_temperature': FoxESSTSeriesSensor('inverter_temperature', '°C'),
-        'ambient_temperature': FoxESSTSeriesSensor('ambient_temperature', '°C'),
-        'todays_yield': FoxESSTSeriesSensor('todays_yield', 'kWh'),
-        'total_yield': FoxESSTSeriesSensor('total_yield', 'kWh')
+        'grid_power': FoxESSTSeriesSensor('grid_power', 'W', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'gen_power': FoxESSTSeriesSensor('gen_power', 'W', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'load_power': FoxESSTSeriesSensor('load_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'grid_voltage_R': FoxESSTSeriesSensor('grid_voltage_R', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'grid_current_R': FoxESSTSeriesSensor('grid_current_R', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'grid_frequency_R': FoxESSTSeriesSensor('grid_frequency_R', SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT),
+        'grid_power_R': FoxESSTSeriesSensor('grid_power_R', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'grid_voltage_S': FoxESSTSeriesSensor('grid_voltage_S', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'grid_current_S': FoxESSTSeriesSensor('grid_current_S', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'grid_frequency_S': FoxESSTSeriesSensor('grid_frequency_S', SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT),
+        'grid_power_S': FoxESSTSeriesSensor('grid_power_S', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'grid_voltage_T': FoxESSTSeriesSensor('grid_voltage_T', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'grid_current_T': FoxESSTSeriesSensor('grid_current_T', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'grid_frequency_T': FoxESSTSeriesSensor('grid_frequency_T', SensorDeviceClass.FREQUENCY, SensorStateClass.MEASUREMENT),
+        'grid_power_T': FoxESSTSeriesSensor('grid_power_T', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'PV1_voltage': FoxESSTSeriesSensor('PV1_voltage', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'PV1_current': FoxESSTSeriesSensor('PV1_current', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'PV1_power': FoxESSTSeriesSensor('PV1_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'PV2_voltage': FoxESSTSeriesSensor('PV2_voltage', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'PV2_current': FoxESSTSeriesSensor('PV2_current', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'PV2_power': FoxESSTSeriesSensor('PV2_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'PV3_voltage': FoxESSTSeriesSensor('PV3_voltage', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'PV3_current': FoxESSTSeriesSensor('PV3_current', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'PV3_power': FoxESSTSeriesSensor('PV3_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'PV4_voltage': FoxESSTSeriesSensor('PV4_voltage', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+        'PV4_current': FoxESSTSeriesSensor('PV4_current', SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+        'PV4_power': FoxESSTSeriesSensor('PV4_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        'boost_temperature': FoxESSTSeriesSensor('boost_temperature', SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
+        'inverter_temperature': FoxESSTSeriesSensor('inverter_temperature', SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
+        'ambient_temperature': FoxESSTSeriesSensor('ambient_temperature', SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
+        'todays_yield': FoxESSTSeriesSensor('todays_yield',SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        'total_yield': FoxESSTSeriesSensor('total_yield', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING)
     }
 
     host = config_entry.data["ip_address"]
@@ -97,16 +101,15 @@ async def async_setup_entry(
 class FoxESSTSeriesSensor(SensorEntity):
     """Representation of a FoxESS T Series sensor."""
 
-    def __init__(self, id, unit):
+    def __init__(self, id, unit, device_class = None, state_class = None):
         super().__init__()
         self.id = id
         self._name = ' '.join([part.title() for part in id.split('_')])
         self._state = None
         self._available = True
         self._attr_native_unit_of_measurement = unit
-        # TODO: implement classes
-        # self._attr_device_class = SensorDeviceClass.ENERGY
-        # self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_device_class = device_class
+        self._attr_state_class = state_class
 
     @property
     def name(self) -> str:
