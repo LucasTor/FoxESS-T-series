@@ -105,6 +105,7 @@ def validate_inverter_payload(payload):
     function_code_valid = received_function_code == expected_function_code
 
     if(not function_code_valid):
+        _LOGGER.error("Invalid message function code.")
         return False
 
     expected_header = bytes.fromhex("7E7E")
