@@ -82,7 +82,7 @@ def parse_inverter_payload(payload):
 
         return result
     except Exception as e:
-        _LOGGER.error(e)
+        _LOGGER.debug(e)
         return None
 
 def calculate_crc(msg) -> int:
@@ -105,7 +105,7 @@ def validate_inverter_payload(payload):
     function_code_valid = received_function_code == expected_function_code
 
     if(not function_code_valid):
-        _LOGGER.error("Invalid message function code.")
+        _LOGGER.debug("Invalid message function code.")
         return False
 
     expected_header = bytes.fromhex("7E7E")
@@ -114,7 +114,7 @@ def validate_inverter_payload(payload):
     header_valid = received_header == expected_header
 
     if(not header_valid):
-        _LOGGER.error("Invalid message header.")
+        _LOGGER.debug("Invalid message header.")
         return False
     
     expected_footer = bytes.fromhex("E7E7")
@@ -123,7 +123,7 @@ def validate_inverter_payload(payload):
     footer_valid = received_footer == expected_footer
     
     if(not footer_valid):
-        _LOGGER.error("Invalid message footer.")
+        _LOGGER.debug("Invalid message footer.")
         return False
 
     received_crc = payload[-4:-2]

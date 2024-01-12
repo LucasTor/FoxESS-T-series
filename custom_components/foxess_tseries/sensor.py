@@ -57,7 +57,7 @@ async def async_setup_entry(
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
 
-    _LOGGER.warn(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
+    _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
     inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     inverter_socket.connect((host, port))
     inverter_socket.setblocking(False)
@@ -77,7 +77,7 @@ async def async_setup_entry(
                 if(not parsed_payload):
                     return
                 
-                _LOGGER.info(f'Received new inverter payload at {parsed_payload["timestamp"]}')
+                _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
 
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
@@ -89,7 +89,7 @@ async def async_setup_entry(
         timer = threading.Timer(1, handle_receive)
         timer.start()
 
-    _LOGGER.info("Adding FoxESS T Series sensors to Home Assistant")
+    _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
     async_add_entities(inverter_sensors.values(), update_before_add=True)
 
     handle_receive()
@@ -130,6 +130,6 @@ class FoxESSTSeriesSensor(SensorEntity):
         return self._state
     
     def received_message(self, val):
-        _LOGGER.info(f'Received {self.id} state: {str(val)}')
+        _LOGGER.debug(f'Received {self.id} state: {str(val)}')
         self._state = str(val)
         self.async_schedule_update_ha_state()
