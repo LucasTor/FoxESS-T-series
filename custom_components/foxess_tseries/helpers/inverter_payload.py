@@ -99,7 +99,7 @@ def calculate_crc(msg) -> int:
     return crc.to_bytes(2, byteorder='little')
 
 def validate_inverter_payload(payload):
-    received_function_code = int(payload[2].hex(), 16)
+    received_function_code = payload[2]
     expected_function_code = 2
 
     function_code_valid = received_function_code == expected_function_code
