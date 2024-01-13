@@ -74,6 +74,7 @@ async def async_setup_entry(
         nonlocal empty_attempts
 
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        inverter_socket.settimeout(2)
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
@@ -156,7 +157,7 @@ async def async_setup_entry(
             _LOGGER.debug('Trying to reconnect to socket')
             create_socket()
 
-        timer = threading.Timer(1 if connected else 10, handle_receive)
+        timer = threading.Timer(1 if connected else 60, handle_receive)
         timer.start()
 
     _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
