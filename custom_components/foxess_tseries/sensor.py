@@ -85,7 +85,6 @@ async def async_setup_entry(
             connected = False
             connecting = False
             _LOGGER.debug('Socket unreachable...')
-            socket.close()
 
     create_socket()
 
