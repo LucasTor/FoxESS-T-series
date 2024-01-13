@@ -71,6 +71,7 @@ async def async_setup_entry(
         nonlocal connected
         nonlocal connecting
         nonlocal inverter_socket
+        nonlocal empty_attempts
 
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.settimeout(5)
@@ -82,6 +83,7 @@ async def async_setup_entry(
             inverter_socket.setblocking(False)
             connected = True
             connecting = False
+            empty_attempts = 0
             _LOGGER.debug('Socket connected!')
         except:
             connected = False
