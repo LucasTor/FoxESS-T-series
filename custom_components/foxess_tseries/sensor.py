@@ -118,7 +118,7 @@ async def async_setup_entry(
                 else:
                     _LOGGER.debug(f'Unknow error ${error.errno}')
                     _LOGGER.debug(error)
-                    raise error
+                    # raise error
 
         if connected:
             receive_msg()
