@@ -60,10 +60,12 @@ async def async_setup_entry(
 
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
+    failed_attempts_before_disconnected = 300
 
     inverter_socket = None
     connected = False
     connecting = False
+    empty_attempts = 0
 
     def create_socket():
         nonlocal connected
@@ -92,9 +94,12 @@ async def async_setup_entry(
         nonlocal connected
         nonlocal connecting
         nonlocal inverter_socket
+        nonlocal empty_attempts
+
         def receive_msg():
             nonlocal connected
             nonlocal inverter_socket
+            nonlocal empty_attempts
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
@@ -110,17 +115,14 @@ async def async_setup_entry(
                 
                 _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
 
+                empty_attempts = 0
+
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
 
-            except BlockingIOError as e: # BlockingIOError is fired when no data is received by the socket
-                _LOGGER.debug(dir(e))
-                _LOGGER.debug(e.errno)
-                _LOGGER.debug(e.filename)
-                _LOGGER.debug(e.filename2)
-                _LOGGER.debug(e.strerror)
-                # _LOGGER.debug(e['characters_written'])
+            except BlockingIOError: # BlockingIOError is fired when no data is received by the socket
                 _LOGGER.debug("No data received from socket.")
+                empty_attempts += 1
                 return
             except OSError as error:
                 connected = False
@@ -131,13 +133,20 @@ async def async_setup_entry(
                     _LOGGER.debug(f'Unknow error ${error.errno}')
                     _LOGGER.debug(error)
 
+        if(empty_attempts > failed_attempts_before_disconnected):
+            connected = False
+            try:
+                socket.close()
+            except:
+                pass
+
         if connected:
             receive_msg()
         elif not connecting:
             _LOGGER.debug('Trying to reconnect to socket')
             create_socket()
 
-        timer = threading.Timer(1, handle_receive)
+        timer = threading.Timer(1 if connected else 10, handle_receive)
         timer.start()
 
     _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
