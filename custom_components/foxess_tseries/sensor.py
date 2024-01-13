@@ -126,6 +126,7 @@ async def async_setup_entry(
                 _LOGGER.debug("No data received from socket.")
                 return
             except OSError as error:
+                _LOGGER.debug("Disconnected.")
                 connected = False
                 socket.close()
                 if(error.errno == 57):
@@ -137,6 +138,7 @@ async def async_setup_entry(
 
         empty_attempts += 1
         if(empty_attempts > failed_attempts_before_disconnected):
+            _LOGGER.debug("Socket has been empty for too long, considering disconnected.")
             connected = False
             try:
                 socket.close()
@@ -144,6 +146,7 @@ async def async_setup_entry(
                 pass
 
         if connected:
+            _LOGGER.debug('Trying to receive message')
             receive_msg()
         elif not connecting:
             _LOGGER.debug('Trying to reconnect to socket')
