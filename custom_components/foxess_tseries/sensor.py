@@ -122,7 +122,6 @@ async def async_setup_entry(
 
             except BlockingIOError: # BlockingIOError is fired when no data is received by the socket
                 _LOGGER.debug("No data received from socket.")
-                empty_attempts += 1
                 return
             except OSError as error:
                 connected = False
@@ -133,6 +132,8 @@ async def async_setup_entry(
                     _LOGGER.debug(f'Unknow error ${error.errno}')
                     _LOGGER.debug(error)
 
+
+        empty_attempts += 1
         if(empty_attempts > failed_attempts_before_disconnected):
             connected = False
             try:
