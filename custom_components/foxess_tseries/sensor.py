@@ -69,17 +69,18 @@ async def async_setup_entry(
         nonlocal connected
         nonlocal connecting
         nonlocal inverter_socket
+
         if (connecting):
             _LOGGER.debug(f'Already trying to connect, skipping')
             return
 
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        inverter_socket.setblocking(False)
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
             connecting = True
             inverter_socket.connect((host, port))
+            inverter_socket.setblocking(False)
             connected = True
             connecting = False
             _LOGGER.debug('Socket connected!')
