@@ -68,7 +68,7 @@ async def async_setup_entry(
         nonlocal inverter_socket
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.setblocking(False)
-        inverter_socket.settimeout(0.5)
+        inverter_socket.settimeout(5)
 
     def connect_socket():
         nonlocal connected
@@ -113,7 +113,7 @@ async def async_setup_entry(
                 return 
             except OSError as error:
                 connected = False
-                if(error.errno == 57):
+                if(error.errno == 57 or error == 'timed out'):
                     _LOGGER.debug('Socket connection lost.')
                 else:
                     _LOGGER.debug(f'Unknow error ${error.errno}')
