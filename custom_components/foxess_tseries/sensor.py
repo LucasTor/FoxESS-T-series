@@ -74,7 +74,6 @@ async def async_setup_entry(
         nonlocal empty_attempts
 
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        inverter_socket.settimeout(5)
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
