@@ -61,13 +61,35 @@ async def async_setup_entry(
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
 
-    _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
-    inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    inverter_socket.connect((host, port))
-    inverter_socket.setblocking(False)
+    
+    inverter_socket = None
+    connected = False
+
+    def create_socket():
+        nonlocal inverter_socket
+        inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        inverter_socket.setblocking(False)
+
+    def connect_socket():
+        nonlocal connected
+        nonlocal inverter_socket
+
+        try:
+            _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
+            inverter_socket.connect((host, port))
+            connected = True
+            _LOGGER.debug('Socket connected!')
+        except socket.error:
+            _LOGGER.debug('Socket unreachable...')
+            connected = False
+
+    create_socket()
+    connect_socket()
 
     def handle_receive():
+        nonlocal connected
         def receive_msg():
+            nonlocal connected
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
@@ -86,10 +108,20 @@ async def async_setup_entry(
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
 
-            except (BlockingIOError):
-                return # BlockingIOError is fired when no data is received by the socket
+            except (BlockingIOError): # BlockingIOError is fired when no data is received by the socket
+                return 
+            except OSError as error:
+                if(error.errno == 57):
+                    _LOGGER.debug('Socket connection lost.')
+                    connected = False
+                else:
+                    raise error
 
-        receive_msg()
+        if connected:
+            receive_msg()
+        else:
+            connect_socket()
+
         timer = threading.Timer(1, handle_receive)
         timer.start()
 
