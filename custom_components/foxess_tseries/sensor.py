@@ -117,6 +117,7 @@ async def async_setup_entry(
                     _LOGGER.debug('Socket connection lost.')
                 else:
                     _LOGGER.debug(f'Unknow error ${error.errno}')
+                    _LOGGER.debug(error)
                     raise error
 
         if connected:
