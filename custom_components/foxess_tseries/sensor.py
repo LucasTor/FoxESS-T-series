@@ -112,9 +112,9 @@ async def async_setup_entry(
                 _LOGGER.debug("No data received from socket.")
                 return 
             except OSError as error:
+                connected = False
                 if(error.errno == 57):
                     _LOGGER.debug('Socket connection lost.')
-                    connected = False
                 else:
                     _LOGGER.debug(f'Unknow error ${error.errno}')
                     raise error
