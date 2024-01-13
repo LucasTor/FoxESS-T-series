@@ -115,12 +115,11 @@ async def async_setup_entry(
 
             except BlockingIOError as e: # BlockingIOError is fired when no data is received by the socket
                 _LOGGER.debug(dir(e))
-                _LOGGER.debug(e.get('errno', None))
-                _LOGGER.debug(e.get('filename', None))
-                _LOGGER.debug(e.get('filename2', None))
-                _LOGGER.debug(e.get('strerror', None))
-                _LOGGER.debug(e.get('characters_written', None))
-                _LOGGER.debug(e.get('args', None))
+                _LOGGER.debug(e.errno)
+                _LOGGER.debug(e.filename)
+                _LOGGER.debug(e.filename2)
+                _LOGGER.debug(e.strerror)
+                _LOGGER.debug(e['characters_written'])
                 _LOGGER.debug("No data received from socket.")
                 return
             except OSError as error:
