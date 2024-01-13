@@ -83,9 +83,10 @@ async def async_setup_entry(
         except BlockingIOError:
             return
         except socket.error:
+            connected = False
+            connecting = False
             _LOGGER.debug('Socket unreachable...')
             socket.close()
-            connected = False
 
     create_socket()
 
