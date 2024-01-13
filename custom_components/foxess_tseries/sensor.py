@@ -65,14 +65,10 @@ async def async_setup_entry(
     connected = False
 
     def create_socket():
+        nonlocal connected
         nonlocal inverter_socket
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.setblocking(False)
-        inverter_socket.settimeout(5)
-
-    def connect_socket():
-        nonlocal connected
-        nonlocal inverter_socket
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
@@ -81,10 +77,10 @@ async def async_setup_entry(
             _LOGGER.debug('Socket connected!')
         except socket.error:
             _LOGGER.debug('Socket unreachable...')
+            socket.close()
             connected = False
 
     create_socket()
-    connect_socket()
 
     def handle_receive():
         nonlocal connected
@@ -113,6 +109,7 @@ async def async_setup_entry(
                 return 
             except OSError as error:
                 connected = False
+                socket.close()
                 if(error.errno == 57 or error == 'timed out'):
                     _LOGGER.debug('Socket connection lost.')
                 else:
@@ -123,7 +120,7 @@ async def async_setup_entry(
         if connected:
             receive_msg()
         else:
-            connect_socket()
+            create_socket()
 
         timer = threading.Timer(1, handle_receive)
         timer.start()
