@@ -63,17 +63,23 @@ async def async_setup_entry(
 
     inverter_socket = None
     connected = False
+    connecting = False
 
     def create_socket():
         nonlocal connected
+        nonlocal connecting
         nonlocal inverter_socket
+        if (connecting):
+            return
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.setblocking(False)
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
+            connecting = True
             inverter_socket.connect((host, port))
             connected = True
+            connecting = False
             _LOGGER.debug('Socket connected!')
         except BlockingIOError:
             return
