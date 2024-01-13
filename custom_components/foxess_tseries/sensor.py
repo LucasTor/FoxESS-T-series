@@ -113,24 +113,20 @@ async def async_setup_entry(
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
 
-            except (BlockingIOError): # BlockingIOError is fired when no data is received by the socket
+            except BlockingIOError as e: # BlockingIOError is fired when no data is received by the socket
+                _LOGGER.debug(dir(e))
                 _LOGGER.debug("No data received from socket.")
-                return 
-            except (TimeoutError): # BlockingIOError is fired when no data is received by the socket
-                _LOGGER.debug("No data received from socket.")
-                return 
+                return
             except OSError as error:
                 connected = False
                 socket.close()
-                if(error.errno == 57 or error == 'timed out'):
+                if(error.errno == 57):
                     _LOGGER.debug('Socket connection lost.')
                 else:
                     _LOGGER.debug(f'Unknow error ${error.errno}')
                     _LOGGER.debug(error)
-                    # raise error
 
         if connected:
-            _LOGGER.debug('Trying to receive msg')
             receive_msg()
         elif not connecting:
             _LOGGER.debug('Trying to reconnect to socket')
