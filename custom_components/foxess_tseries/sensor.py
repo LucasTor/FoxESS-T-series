@@ -120,6 +120,9 @@ async def async_setup_entry(
             except (BlockingIOError): # BlockingIOError is fired when no data is received by the socket
                 _LOGGER.debug("No data received from socket.")
                 return 
+            except (TimeoutError): # BlockingIOError is fired when no data is received by the socket
+                _LOGGER.debug("No data received from socket.")
+                return 
             except OSError as error:
                 connected = False
                 socket.close()
