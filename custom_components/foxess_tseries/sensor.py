@@ -105,6 +105,7 @@ async def async_setup_entry(
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
+                    connected = False
                     _LOGGER.debug("Empty data.")
                     return
 
@@ -141,7 +142,8 @@ async def async_setup_entry(
 
         empty_attempts += 1
         if(empty_attempts > failed_attempts_before_disconnected):
-            _LOGGER.debug("Socket has been empty for too long, considering disconnected.")
+            _LOGGER.debug("Socket has been empty for too long, considering disconnected and zeroing values.")
+            #TODO: zero values
             connected = False
             try:
                 socket.close()
