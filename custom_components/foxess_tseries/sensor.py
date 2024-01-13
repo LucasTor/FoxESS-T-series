@@ -105,14 +105,17 @@ async def async_setup_entry(
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
+                    _LOGGER.debug("Empty data.")
                     return
 
                 is_payload_valid = validate_inverter_payload(data)
                 if(not is_payload_valid):
+                    _LOGGER.debug("Invalid payload.")
                     return 
 
                 parsed_payload = parse_inverter_payload(data)
                 if(not parsed_payload):
+                    _LOGGER.debug("Empty parsed payload?")
                     return
                 
                 _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
