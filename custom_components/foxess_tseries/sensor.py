@@ -70,10 +70,6 @@ async def async_setup_entry(
         nonlocal connecting
         nonlocal inverter_socket
 
-        if (connecting):
-            _LOGGER.debug(f'Already trying to connect, skipping')
-            return
-
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         try:
@@ -96,8 +92,10 @@ async def async_setup_entry(
     def handle_receive():
         nonlocal connected
         nonlocal connecting
+        nonlocal inverter_socket
         def receive_msg():
             nonlocal connected
+            nonlocal inverter_socket
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
@@ -130,8 +128,10 @@ async def async_setup_entry(
                     # raise error
 
         if connected:
+            _LOGGER.debug('Trying to receive msg')
             receive_msg()
         elif not connecting:
+            _LOGGER.debug('Trying to reconnect to socket')
             create_socket()
 
         timer = threading.Timer(1, handle_receive)
