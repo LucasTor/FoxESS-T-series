@@ -78,13 +78,10 @@ async def async_setup_entry(
             connecting = True
             inverter_socket.connect((host, port))
             inverter_socket.setblocking(False)
-            inverter_socket.settimeout(0.5)
             connected = True
             connecting = False
             _LOGGER.debug('Socket connected!')
-        except BlockingIOError:
-            return
-        except socket.error:
+        except:
             connected = False
             connecting = False
             _LOGGER.debug('Socket unreachable...')
