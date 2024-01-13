@@ -119,7 +119,7 @@ async def async_setup_entry(
                 _LOGGER.debug(e.filename)
                 _LOGGER.debug(e.filename2)
                 _LOGGER.debug(e.strerror)
-                _LOGGER.debug(e['characters_written'])
+                # _LOGGER.debug(e['characters_written'])
                 _LOGGER.debug("No data received from socket.")
                 return
             except OSError as error:
