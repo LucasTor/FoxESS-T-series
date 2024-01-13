@@ -68,6 +68,7 @@ async def async_setup_entry(
         nonlocal inverter_socket
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.setblocking(False)
+        inverter_socket.settimeout(0.5)
 
     def connect_socket():
         nonlocal connected
