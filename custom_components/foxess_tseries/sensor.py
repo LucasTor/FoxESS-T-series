@@ -61,7 +61,6 @@ async def async_setup_entry(
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
 
-    
     inverter_socket = None
     connected = False
 
@@ -109,6 +108,7 @@ async def async_setup_entry(
                         sensor.received_message(parsed_payload[sensor_key])
 
             except (BlockingIOError): # BlockingIOError is fired when no data is received by the socket
+                _LOGGER.debug("No data received from socket.")
                 return 
             except OSError as error:
                 if(error.errno == 57):
