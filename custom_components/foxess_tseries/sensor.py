@@ -113,6 +113,8 @@ async def async_setup_entry(
         zero_all_thread.cancel()
         create_zero_all_thread()
 
+    create_zero_all_thread()
+
     def create_socket():
         nonlocal connected
         nonlocal connecting
