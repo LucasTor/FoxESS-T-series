@@ -58,20 +58,65 @@ async def async_setup_entry(
         'total_yield': FoxESSTSeriesSensor('total_yield', 'kWh', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING)
     }
 
+    sensors_to_zero_on_lost = [
+        'grid_power',
+        'gen_power',
+        'load_power',
+        'grid_voltage_R',
+        'grid_current_R',
+        'grid_frequency_R',
+        'grid_power_R',
+        'grid_voltage_S',
+        'grid_current_S',
+        'grid_frequency_S',
+        'grid_power_S',
+        'grid_voltage_T',
+        'grid_current_T',
+        'grid_frequency_T',
+        'grid_power_T',
+        'PV1_voltage',
+        'PV1_current',
+        'PV1_power',
+        'PV2_voltage',
+        'PV2_current',
+        'PV2_power',
+        'PV3_voltage',
+        'PV3_current',
+        'PV3_power',
+        'PV4_voltage',
+        'PV4_current',
+        'PV4_power'
+    ]
+
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
-    failed_attempts_before_disconnected = 300
 
     inverter_socket = None
     connected = False
     connecting = False
-    empty_attempts = 0
+    zero_all_thread = None
+
+    def zero_all_values():
+        _LOGGER.debug("No message received in the last 5 minutes, zeroing values.")
+        for sensor_key in sensors_to_zero_on_lost:
+            sensor = inverter_sensors[sensor_key]
+            sensor.received_message(0)
+                        
+    def create_zero_all_thread():
+        nonlocal zero_all_thread
+        zero_all_thread = threading.Timer(300, zero_all_values)
+        zero_all_thread.start()
+
+    def reset_zero_all_thread():
+        _LOGGER.debug("Resetting zero values timer.")
+        nonlocal zero_all_thread
+        zero_all_thread.cancel()
+        create_zero_all_thread()
 
     def create_socket():
         nonlocal connected
         nonlocal connecting
         nonlocal inverter_socket
-        nonlocal empty_attempts
 
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.settimeout(5)
@@ -83,7 +128,6 @@ async def async_setup_entry(
             inverter_socket.setblocking(False)
             connected = True
             connecting = False
-            empty_attempts = 0
             _LOGGER.debug('Socket connected!')
         except:
             connected = False
@@ -96,17 +140,15 @@ async def async_setup_entry(
         nonlocal connected
         nonlocal connecting
         nonlocal inverter_socket
-        nonlocal empty_attempts
 
         def receive_msg():
             nonlocal connected
             nonlocal inverter_socket
-            nonlocal empty_attempts
             try:
                 data = inverter_socket.recv(512)
                 if(not data):
-                    connected = False
                     _LOGGER.debug("Empty data.")
+                    connected = False
                     return
 
                 is_payload_valid = validate_inverter_payload(data)
@@ -121,40 +163,24 @@ async def async_setup_entry(
                 
                 _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
 
-                empty_attempts = 0
-
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
 
-            except BlockingIOError: # BlockingIOError is fired when no data is received by the socket
+                reset_zero_all_thread()
+
+            except BlockingIOError:
                 _LOGGER.debug("No data received from socket.")
-                return
-            except OSError as error:
-                _LOGGER.debug("Disconnected.")
-                connected = False
-                socket.close()
-                if(error.errno == 57):
-                    _LOGGER.debug('Socket connection lost.')
-                else:
-                    _LOGGER.debug(f'Unknow error ${error.errno}')
-                    _LOGGER.debug(error)
-
-
-        empty_attempts += 1
-        if(empty_attempts > failed_attempts_before_disconnected):
-            _LOGGER.debug("Socket has been empty for too long, considering disconnected and zeroing values.")
-            #TODO: zero values
-            connected = False
-            try:
-                socket.close()
-            except:
                 pass
 
+            except Exception as error:
+                _LOGGER.error('Unknow error')
+                _LOGGER.error(error)
+
         if connected:
-            _LOGGER.debug('Trying to receive message')
+            _LOGGER.debug('Trying to receive message.')
             receive_msg()
         elif not connecting:
-            _LOGGER.debug('Trying to reconnect to socket')
+            _LOGGER.debug('Trying to reconnect to socket.')
             create_socket()
 
         timer = threading.Timer(1 if connected else 60, handle_receive)
