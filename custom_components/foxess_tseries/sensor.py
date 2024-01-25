@@ -179,6 +179,7 @@ async def async_setup_entry(
                 _LOGGER.debug("No data received from socket.")
                 empty_comms += 1
                 if(empty_comms > 300):
+                    _LOGGER.debug("Socket has been empty for too long, considering disconnected.")
                     empty_comms = 0
                     connected = False
                     try:
