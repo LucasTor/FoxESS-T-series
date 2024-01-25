@@ -95,6 +95,7 @@ async def async_setup_entry(
     connected = False
     connecting = False
     zero_all_thread = None
+    empty_comms = 0
 
     def zero_all_values():
         _LOGGER.debug("No message received in the last 5 minutes, zeroing values.")
@@ -140,14 +141,18 @@ async def async_setup_entry(
 
     def handle_receive():
         nonlocal connected
+        nonlocal empty_comms
         nonlocal connecting
         nonlocal inverter_socket
 
         def receive_msg():
             nonlocal connected
+            nonlocal empty_comms
             nonlocal inverter_socket
             try:
                 data = inverter_socket.recv(512)
+                empty_comms = 0
+                
                 if(not data):
                     _LOGGER.debug("Empty data.")
                     connected = False
@@ -172,6 +177,14 @@ async def async_setup_entry(
 
             except BlockingIOError:
                 _LOGGER.debug("No data received from socket.")
+                empty_comms += 1
+                if(empty_comms > 300):
+                    empty_comms = 0
+                    connected = False
+                    try:
+                        inverter_socket.close()
+                    except:
+                        pass
                 pass
 
             except Exception as error:
