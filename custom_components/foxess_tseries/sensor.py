@@ -227,6 +227,7 @@ async def async_setup_entry(
                     return
                 
                 _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
+                _LOGGER.debug(data.hex())
 
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
