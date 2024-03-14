@@ -92,9 +92,7 @@ async def async_setup_entry(
     host = config_entry.data.get("ip_address", None)
     port = config_entry.data.get("port", None)
     serial_port = config_entry.data.get("serial_port", None)
-
-    _LOGGER.debug("SERIAL PORT")
-    _LOGGER.debug(serial_port)
+    payload_version = config_entry.data.get("payload_version", 0)
 
     inverter_socket = None
     connected = False
@@ -221,7 +219,7 @@ async def async_setup_entry(
                     _LOGGER.debug("Invalid payload.")
                     return 
 
-                parsed_payload = parse_inverter_payload(data)
+                parsed_payload = parse_inverter_payload(data, payload_version)
                 if(not parsed_payload):
                     _LOGGER.debug("Empty parsed payload?")
                     return

@@ -10,7 +10,8 @@ from .const import DOMAIN
 form_schema = vol.Schema({
     vol.Optional("ip_address", default="192.168.0.129"): str,
     vol.Optional("port", default=502): int,
-    vol.Optional("serial_port"): str
+    vol.Optional("serial_port"): str,
+    vol.Optional("payload_version", default=0): int,
 })
 
 def ping_server(server: str, port: int, timeout=3):

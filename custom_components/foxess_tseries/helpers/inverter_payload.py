@@ -44,12 +44,15 @@ value_resolution = {
     'grid_voltage_R': 0.1,
     'grid_current_R': 0.1,
     'grid_frequency_R': 0.01,
+    'grid_power_R': 0.01,
     'grid_voltage_S': 0.1,
     'grid_current_S': 0.1,
     'grid_frequency_S': 0.01,
+    'grid_power_S': 0.01,
     'grid_voltage_T': 0.1,
     'grid_current_T': 0.1,
     'grid_frequency_T': 0.01,
+    'grid_power_T': 0.01,
     'PV1_voltage': 0.1,
     'PV1_current': 0.1,
     'PV2_voltage': 0.1,
@@ -62,11 +65,16 @@ value_resolution = {
     'total_yield': 0.1,
 }
 
-def parse_inverter_payload(payload):
+def parse_inverter_payload(payload, payload_version):
     try:
         msg_len = int(payload[7:9].hex(), 16)
-        garbage_bytes = msg_len - 62
-        values = struct.unpack(f'> 3x i 2x 31h i {garbage_bytes}x', payload)
+        garbage_bytes = msg_len - 62 if payload_version == 0 else msg_len - 68
+
+        values = struct.unpack(
+            f'> 3x i 2x 31h i {garbage_bytes}x' if payload_version == 0 else f'> 3x i 8x 31h i {garbage_bytes}x',
+            payload
+        )
+
         result = dict(zip(keys, values))
 
         result['timestamp'] = datetime.fromtimestamp(result['timestamp']).isoformat()

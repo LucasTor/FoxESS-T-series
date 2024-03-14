@@ -1,0 +1,16 @@
+{
+  "config": {
+    "title": "Foxess T Series Solar Inverter",
+    "step": {
+      "user": {
+        "title": "Enter your inverter connection information",
+        "data": {
+          "ip_address": "IP Address",
+          "port": "Port",
+          "serial_port": "Serial Port (Will override IP/Port and use Serial mode!)",
+          "payload_version": "Payload Version (Check documentation)"
+        }
+      }
+    }
+  }
+}
