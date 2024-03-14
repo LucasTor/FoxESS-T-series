@@ -174,12 +174,13 @@ async def async_setup_entry(
                 data_buffer = b''
                 data = inverter_socket.read()
                 read_count = 0
+                start_index = -1
 
                 while data:
                     data_buffer += data
                     read_count += 1
 
-                    if(read_count >= 200):
+                    if(read_count >= 300):
                         _LOGGER.warn("Serial port flooding, skipping...")
                         return None
 
@@ -187,6 +188,9 @@ async def async_setup_entry(
                         start_index = data_buffer.index(start_marker)
 
                     if end_marker in data_buffer:
+                        if(start_index == -1):
+                            return None
+
                         complete_message = data_buffer[start_index:]
                         return complete_message
 
