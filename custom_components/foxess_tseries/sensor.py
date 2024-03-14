@@ -180,7 +180,7 @@ async def async_setup_entry(
                     data_buffer += data
                     read_count += 1
 
-                    if(read_count >= 300):
+                    if(read_count >= 1000):
                         _LOGGER.warn("Serial port flooding, skipping...")
                         return None
 
@@ -189,6 +189,7 @@ async def async_setup_entry(
 
                     if end_marker in data_buffer:
                         if(start_index == -1):
+                            _LOGGER.warn("Message end marker hit with no start marker.")
                             return None
 
                         complete_message = data_buffer[start_index:]
