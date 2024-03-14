@@ -89,9 +89,9 @@ async def async_setup_entry(
         'PV4_power'
     ]
 
-    host = config_entry.data["ip_address"]
-    port = config_entry.data["port"]
-    serial_port = config_entry.data["serial_port"]
+    host = config_entry.data.get("ip_address", None)
+    port = config_entry.data.get("port", None)
+    serial_port = config_entry.data.get("serial_port", None)
 
     _LOGGER.debug("SERIAL PORT")
     _LOGGER.debug(serial_port)
@@ -242,6 +242,7 @@ async def async_setup_entry(
                 pass
 
             except Exception as error:
+                connected = False
                 _LOGGER.error('Unknow error')
                 _LOGGER.error(error)
 
