@@ -8,8 +8,9 @@ from .const import DOMAIN
 
 
 form_schema = vol.Schema({
-    vol.Required("ip_address", default="192.168.0.129"): str,
-    vol.Required("port", default=502): int
+    vol.Optional("ip_address", default="192.168.0.129"): str,
+    vol.Optional("port", default=502): int,
+    vol.Optional("serial_port"): str
 })
 
 def ping_server(server: str, port: int, timeout=3):
@@ -34,11 +35,12 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=form_schema
             )
         
-        if(not ping_server(user_input['ip_address'], user_input['port'])):
+        #TODO: Communication valdation for when using serial port
+        if(user_input['ip_address'] and user_input['port'] and not ping_server(user_input['ip_address'], user_input['port'])):
             return self.async_show_form(
                 step_id="user",
                 data_schema=form_schema,
                 errors={ 'base': "Unable to reach inverter." }
             )
-                        
+
         return self.async_create_entry(title='FoxESS T Series', data=user_input)

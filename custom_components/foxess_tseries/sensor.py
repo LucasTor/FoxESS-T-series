@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, Optional
 import socket
 import threading
 import json
+import serial
 from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -90,6 +91,10 @@ async def async_setup_entry(
 
     host = config_entry.data["ip_address"]
     port = config_entry.data["port"]
+    serial_port = config_entry.data["serial_port"]
+
+    _LOGGER.debug("SERIAL PORT")
+    _LOGGER.debug(serial_port)
 
     inverter_socket = None
     connected = False
@@ -121,6 +126,16 @@ async def async_setup_entry(
         nonlocal connecting
         nonlocal inverter_socket
 
+        if(serial_port):
+            _LOGGER.debug("Creating socket as serial port...")
+
+            inverter_socket = serial.Serial(serial_port, 9600)
+            connected = True
+
+            _LOGGER.debug("Socket created as serial port!")
+
+            return
+
         inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         inverter_socket.settimeout(5)
 
@@ -145,17 +160,55 @@ async def async_setup_entry(
         nonlocal connecting
         nonlocal inverter_socket
 
+        def get_raw_data():
+            if(not serial_port):
+                _LOGGER.debug("Getting raw data from websocket")
+                return inverter_socket.recv(512)
+
+            _LOGGER.debug("Getting raw data from usb socket")
+
+            start_marker = b'\x7e\x7e'
+            end_marker = b'\xe7\xe7'
+
+            if(inverter_socket.in_waiting > 0):
+                data_buffer = b''
+                data = inverter_socket.read()
+                read_count = 0
+
+                while data:
+                    data_buffer += data
+                    read_count += 1
+
+                    if(read_count >= 200):
+                        _LOGGER.warn("Serial port flooding, skipping...")
+                        return None
+
+                    if start_marker in data_buffer:            
+                        start_index = data_buffer.index(start_marker)
+
+                    if end_marker in data_buffer:
+                        complete_message = data_buffer[start_index:]
+                        return complete_message
+
+                    data = inverter_socket.read()
+
+            else:
+                _LOGGER.debug("Empty serial port buffer.")
+                return None
+
         def receive_msg():
             nonlocal connected
             nonlocal empty_comms
             nonlocal inverter_socket
+
             try:
-                data = inverter_socket.recv(512)
+                data = get_raw_data()
                 empty_comms = 0
                 
                 if(not data):
                     _LOGGER.debug("Empty data.")
-                    connected = False
+                    if(not serial_port):
+                        connected = False
                     return
 
                 is_payload_valid = validate_inverter_payload(data)
