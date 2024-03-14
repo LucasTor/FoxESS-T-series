@@ -10,6 +10,11 @@ In the current state, it only supports RS485 TCP bridges (I'm using Elfin EW11),
 
 Please use HACS to install it :)
 
+## Configuring the payload version
+
+Payload version 0: The "old" payload, from the older firmwares
+Payload version 1: The "new" payload, with the added 6 bytes in the beginning
+
 ## Considerations
 
 This integration is very new, and was only tested by me, so feel free to test it and open any issues you find here in GitHub
