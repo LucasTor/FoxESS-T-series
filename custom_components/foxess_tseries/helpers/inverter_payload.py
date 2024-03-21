@@ -55,12 +55,16 @@ value_resolution = {
     'grid_power_T': 0.01,
     'PV1_voltage': 0.1,
     'PV1_current': 0.1,
+    'PV1_power': 0.01,
     'PV2_voltage': 0.1,
     'PV2_current': 0.1,
+    'PV2_power': 0.01,
     'PV3_voltage': 0.1,
     'PV3_current': 0.1,
+    'PV3_power': 0.01,
     'PV4_voltage': 0.1,
     'PV4_current': 0.1,
+    'PV4_power': 0.01,
     'todays_yield': 0.1,
     'total_yield': 0.1,
 }
@@ -81,6 +85,11 @@ def parse_inverter_payload(payload, payload_version):
         result['grid_power_R'] = round(result['grid_voltage_R'] * result['grid_current_R'], 2)
         result['grid_power_S'] = round(result['grid_voltage_S'] * result['grid_current_S'], 2)
         result['grid_power_T'] = round(result['grid_voltage_T'] * result['grid_current_T'], 2)
+
+        result['PV1_power'] = round(result['PV1_voltage'] * result['PV1_current'], 2)
+        result['PV2_power'] = round(result['PV2_voltage'] * result['PV2_current'], 2)
+        result['PV3_power'] = round(result['PV3_voltage'] * result['PV3_current'], 2)
+        result['PV4_power'] = round(result['PV4_voltage'] * result['PV4_current'], 2)
 
         def set_resolution (value, resolution):
             return value / (1 / resolution)
