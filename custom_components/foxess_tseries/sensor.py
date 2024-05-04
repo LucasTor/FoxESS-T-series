@@ -302,4 +302,4 @@ class FoxESSTSeriesSensor(SensorEntity):
     def received_message(self, val):
         _LOGGER.debug(f'Received {self.id} state: {str(val)}')
         self._state = str(val)
-        self.async_schedule_update_ha_state()
+        self.schedule_update_ha_state()
