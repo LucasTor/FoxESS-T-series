@@ -9,7 +9,7 @@ The integration now supports both RS485 TCP Bridges as well as RS485 USB Adapter
 To connect your inverter to either adapter (TCP or USB), on the newer models, please refer to [this guide](https://github.com/LucasTor/FoxESS-T-series/issues/2#issuecomment-2088445998), for older models, a RS485 comm port should be found on one of the connectors on the inverter.
 ## Installation
 [![Add Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=foxess_tseries)
-[![Add Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=LucasTor&repository=FoxEss-T-series&category=integration)
+[![Add Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=LucasTor&repository=FoxESS-T-series&category=integration)
 
 ### HACS Installation (Recommended)
 
