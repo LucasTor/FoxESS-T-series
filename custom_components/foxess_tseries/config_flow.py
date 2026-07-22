@@ -1,6 +1,5 @@
 from typing import Any
 import voluptuous as vol
-import json
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 import socket
@@ -15,12 +14,10 @@ form_schema = vol.Schema({
 })
 
 def ping_server(server: str, port: int, timeout=3):
-    """ping server"""
+    """Check the inverter is reachable. Blocking, run in an executor."""
     try:
-        socket.setdefaulttimeout(timeout)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((server, port))
-    except OSError as e:
+        s = socket.create_connection((server, port), timeout=timeout)
+    except OSError:
         return False
     else:
         s.close()
@@ -37,7 +34,13 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             )
         
         #TODO: Communication valdation for when using serial port
-        if(user_input['ip_address'] and user_input['port'] and not ping_server(user_input['ip_address'], user_input['port'])):
+        reachable = True
+        if(user_input.get('ip_address') and user_input.get('port')):
+            reachable = await self.hass.async_add_executor_job(
+                ping_server, user_input['ip_address'], user_input['port']
+            )
+
+        if(not reachable):
             return self.async_show_form(
                 step_id="user",
                 data_schema=form_schema,

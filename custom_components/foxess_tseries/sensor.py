@@ -1,10 +1,9 @@
-"""GitHub sensor platform."""
+"""FoxESS T Series sensor platform."""
 import logging
-from datetime import timedelta
-from typing import Any, Callable, Dict, Optional
+import time
+from typing import Optional
 import socket
 import threading
-import json
 import serial
 from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
 from homeassistant.components.sensor import (
@@ -96,41 +95,31 @@ async def async_setup_entry(
 
     inverter_socket = None
     connected = False
-    connecting = False
-    zero_all_thread = None
     empty_comms = 0
+    last_message = time.monotonic()
+    values_zeroed = False
+    stop_event = threading.Event()
 
     def zero_all_values():
         _LOGGER.debug("No message received in the last 5 minutes, zeroing values.")
         for sensor_key in sensors_to_zero_on_lost:
             sensor = inverter_sensors[sensor_key]
             sensor.received_message(0)
-                        
-    def create_zero_all_thread():
-        nonlocal zero_all_thread
-        zero_all_thread = threading.Timer(300, zero_all_values)
-        zero_all_thread.start()
-
-    def reset_zero_all_thread():
-        _LOGGER.debug("Resetting zero values timer.")
-        nonlocal zero_all_thread
-        zero_all_thread.cancel()
-        create_zero_all_thread()
-
-    create_zero_all_thread()
 
     def create_socket():
         nonlocal connected
-        nonlocal connecting
         nonlocal inverter_socket
 
         if(serial_port):
             _LOGGER.debug("Creating socket as serial port...")
 
-            inverter_socket = serial.Serial(serial_port, 9600)
-            connected = True
-
-            _LOGGER.debug("Socket created as serial port!")
+            try:
+                inverter_socket = serial.Serial(serial_port, 9600)
+                connected = True
+                _LOGGER.debug("Socket created as serial port!")
+            except Exception:
+                connected = False
+                _LOGGER.debug('Serial port unreachable...')
 
             return
 
@@ -139,24 +128,20 @@ async def async_setup_entry(
 
         try:
             _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
-            connecting = True
             inverter_socket.connect((host, port))
             inverter_socket.setblocking(False)
             connected = True
-            connecting = False
             _LOGGER.debug('Socket connected!')
         except:
             connected = False
-            connecting = False
             _LOGGER.debug('Socket unreachable...')
-
-    create_socket()
 
     def handle_receive():
         nonlocal connected
         nonlocal empty_comms
-        nonlocal connecting
         nonlocal inverter_socket
+        nonlocal last_message
+        nonlocal values_zeroed
 
         def get_raw_data():
             if(not serial_port):
@@ -203,6 +188,8 @@ async def async_setup_entry(
             nonlocal connected
             nonlocal empty_comms
             nonlocal inverter_socket
+            nonlocal last_message
+            nonlocal values_zeroed
 
             try:
                 data = get_raw_data()
@@ -230,7 +217,8 @@ async def async_setup_entry(
                 for (sensor_key, sensor) in inverter_sensors.items():
                         sensor.received_message(parsed_payload[sensor_key])
 
-                reset_zero_all_thread()
+                last_message = time.monotonic()
+                values_zeroed = False
 
             except BlockingIOError:
                 _LOGGER.debug("No data received from socket.")
@@ -250,20 +238,37 @@ async def async_setup_entry(
                 _LOGGER.error('Unknow error')
                 _LOGGER.error(error)
 
-        if connected:
-            _LOGGER.debug('Trying to receive message.')
-            receive_msg()
-        elif not connecting:
-            _LOGGER.debug('Trying to reconnect to socket.')
-            create_socket()
+        while not stop_event.is_set():
+            if connected:
+                _LOGGER.debug('Trying to receive message.')
+                receive_msg()
+            else:
+                _LOGGER.debug('Trying to reconnect to socket.')
+                create_socket()
 
-        timer = threading.Timer(1 if connected else 60, handle_receive)
-        timer.start()
+            if(not values_zeroed and time.monotonic() - last_message > 300):
+                zero_all_values()
+                values_zeroed = True
+
+            stop_event.wait(1 if connected else 60)
+
+    def stop_receive_thread():
+        stop_event.set()
+        if inverter_socket:
+            try:
+                inverter_socket.close()
+            except Exception:
+                pass
 
     _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
     async_add_entities(inverter_sensors.values(), update_before_add=True)
 
-    handle_receive()
+    receive_thread = threading.Thread(
+        target=handle_receive, name=f"foxess_tseries_{config_entry.entry_id}", daemon=True
+    )
+    receive_thread.start()
+
+    config_entry.async_on_unload(stop_receive_thread)
 
 class FoxESSTSeriesSensor(SensorEntity):
     """Representation of a FoxESS T Series sensor."""
