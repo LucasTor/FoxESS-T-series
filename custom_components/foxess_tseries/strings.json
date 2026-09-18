@@ -3,13 +3,39 @@
   "config": {
     "step": {
       "user": {
-        "title": "Enter your inverter connection information",
+        "title": "Choose how the inverter is connected",
+        "data": {
+          "connection_type": "Connection type"
+        }
+      },
+      "tcp": {
+        "title": "RS485 to TCP bridge",
         "data": {
           "ip_address": "IP Address",
           "port": "Port",
-          "serial_port": "Serial Port (Will override IP/Port and use Serial mode!)",
           "payload_version": "Payload Version (Check documentation)"
         }
+      },
+      "serial": {
+        "title": "Serial port (USB adapter or ESPHome serial proxy)",
+        "description": "Pick a local RS485 USB adapter or an ESPHome device exposing the inverter through the serial_proxy component. ESPHome proxies only show up once the ESPHome device is set up in Home Assistant.",
+        "data": {
+          "serial_port": "Serial port",
+          "baudrate": "Baud rate",
+          "payload_version": "Payload Version (Check documentation)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to reach inverter.",
+      "esphome_not_ready": "The ESPHome device is not connected yet. Wait for it to come online and try again."
+    }
+  },
+  "selector": {
+    "connection_type": {
+      "options": {
+        "tcp": "RS485 to TCP bridge (IP address)",
+        "serial": "Serial port (USB adapter or ESPHome serial proxy)"
       }
     }
   }

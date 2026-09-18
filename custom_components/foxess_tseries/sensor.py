@@ -1,11 +1,7 @@
 """FoxESS T Series sensor platform."""
 import logging
-import time
 from typing import Optional
-import socket
-import threading
-import serial
-from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
+from .const import DOMAIN
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorDeviceClass,
@@ -13,10 +9,6 @@ from homeassistant.components.sensor import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# TODO: Get this data from user ui cfg
-HOST = "192.168.0.129" 
-PORT = 502
 
 async def async_setup_entry(
     hass,
@@ -88,187 +80,21 @@ async def async_setup_entry(
         'PV4_power'
     ]
 
-    host = config_entry.data.get("ip_address", None)
-    port = config_entry.data.get("port", None)
-    serial_port = config_entry.data.get("serial_port", None)
-    payload_version = config_entry.data.get("payload_version", 0)
+    reader = hass.data[DOMAIN][config_entry.entry_id]
 
-    inverter_socket = None
-    connected = False
-    empty_comms = 0
-    last_message = time.monotonic()
-    values_zeroed = False
-    stop_event = threading.Event()
+    def on_payload(parsed_payload):
+        for (sensor_key, sensor) in inverter_sensors.items():
+            sensor.received_message(parsed_payload[sensor_key])
 
-    def zero_all_values():
-        _LOGGER.debug("No message received in the last 5 minutes, zeroing values.")
+    def on_lost():
         for sensor_key in sensors_to_zero_on_lost:
-            sensor = inverter_sensors[sensor_key]
-            sensor.received_message(0)
+            inverter_sensors[sensor_key].received_message(0)
 
-    def create_socket():
-        nonlocal connected
-        nonlocal inverter_socket
-
-        if(serial_port):
-            _LOGGER.debug("Creating socket as serial port...")
-
-            try:
-                inverter_socket = serial.Serial(serial_port, 9600)
-                connected = True
-                _LOGGER.debug("Socket created as serial port!")
-            except Exception:
-                connected = False
-                _LOGGER.debug('Serial port unreachable...')
-
-            return
-
-        inverter_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        inverter_socket.settimeout(5)
-
-        try:
-            _LOGGER.debug(f'Trying connection to FoxESS T Series on IP {host} and port {port}...')
-            inverter_socket.connect((host, port))
-            inverter_socket.setblocking(False)
-            connected = True
-            _LOGGER.debug('Socket connected!')
-        except:
-            connected = False
-            _LOGGER.debug('Socket unreachable...')
-
-    def handle_receive():
-        nonlocal connected
-        nonlocal empty_comms
-        nonlocal inverter_socket
-        nonlocal last_message
-        nonlocal values_zeroed
-
-        def get_raw_data():
-            if(not serial_port):
-                _LOGGER.debug("Getting raw data from websocket")
-                return inverter_socket.recv(512)
-
-            _LOGGER.debug("Getting raw data from usb socket")
-
-            start_marker = b'\x7e\x7e'
-            end_marker = b'\xe7\xe7'
-
-            if(inverter_socket.in_waiting > 0):
-                data_buffer = b''
-                data = inverter_socket.read()
-                read_count = 0
-                start_index = -1
-
-                while data:
-                    data_buffer += data
-                    read_count += 1
-
-                    if(read_count >= 1000):
-                        _LOGGER.warn("Serial port flooding, skipping...")
-                        return None
-
-                    if start_marker in data_buffer:            
-                        start_index = data_buffer.index(start_marker)
-
-                    if end_marker in data_buffer:
-                        if(start_index == -1):
-                            _LOGGER.warn("Message end marker hit with no start marker.")
-                            return None
-
-                        complete_message = data_buffer[start_index:]
-                        return complete_message
-
-                    data = inverter_socket.read()
-
-            else:
-                _LOGGER.debug("Empty serial port buffer.")
-                return None
-
-        def receive_msg():
-            nonlocal connected
-            nonlocal empty_comms
-            nonlocal inverter_socket
-            nonlocal last_message
-            nonlocal values_zeroed
-
-            try:
-                data = get_raw_data()
-                empty_comms = 0
-                
-                if(not data):
-                    _LOGGER.debug("Empty data.")
-                    if(not serial_port):
-                        connected = False
-                    return
-
-                is_payload_valid = validate_inverter_payload(data)
-                if(not is_payload_valid):
-                    _LOGGER.debug("Invalid payload.")
-                    return 
-
-                parsed_payload = parse_inverter_payload(data, payload_version)
-                if(not parsed_payload):
-                    _LOGGER.debug("Empty parsed payload?")
-                    return
-                
-                _LOGGER.debug(f'Received new inverter payload at {parsed_payload["timestamp"]}')
-                _LOGGER.debug(data.hex())
-
-                for (sensor_key, sensor) in inverter_sensors.items():
-                        sensor.received_message(parsed_payload[sensor_key])
-
-                last_message = time.monotonic()
-                values_zeroed = False
-
-            except BlockingIOError:
-                _LOGGER.debug("No data received from socket.")
-                empty_comms += 1
-                if(empty_comms > 300):
-                    _LOGGER.debug("Socket has been empty for too long, considering disconnected.")
-                    empty_comms = 0
-                    connected = False
-                    try:
-                        inverter_socket.close()
-                    except:
-                        pass
-                pass
-
-            except Exception as error:
-                connected = False
-                _LOGGER.error('Unknow error')
-                _LOGGER.error(error)
-
-        while not stop_event.is_set():
-            if connected:
-                _LOGGER.debug('Trying to receive message.')
-                receive_msg()
-            else:
-                _LOGGER.debug('Trying to reconnect to socket.')
-                create_socket()
-
-            if(not values_zeroed and time.monotonic() - last_message > 300):
-                zero_all_values()
-                values_zeroed = True
-
-            stop_event.wait(1 if connected else 60)
-
-    def stop_receive_thread():
-        stop_event.set()
-        if inverter_socket:
-            try:
-                inverter_socket.close()
-            except Exception:
-                pass
+    reader.on_payload = on_payload
+    reader.on_lost = on_lost
 
     _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
     async_add_entities(inverter_sensors.values(), update_before_add=True)
-
-    receive_thread = threading.Thread(
-        target=handle_receive, name=f"foxess_tseries_{config_entry.entry_id}", daemon=True
-    )
-    receive_thread.start()
-
-    config_entry.async_on_unload(stop_receive_thread)
 
 class FoxESSTSeriesSensor(SensorEntity):
     """Representation of a FoxESS T Series sensor."""
@@ -305,6 +131,8 @@ class FoxESSTSeriesSensor(SensorEntity):
         return self._state
     
     def received_message(self, val):
+        """Handle a new value. Called from the event loop."""
         _LOGGER.debug(f'Received {self.id} state: {str(val)}')
         self._state = str(val)
-        self.schedule_update_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
