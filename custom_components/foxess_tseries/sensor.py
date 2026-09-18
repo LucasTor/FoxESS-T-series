@@ -87,13 +87,14 @@ async def async_setup_entry(
             sensor.received_message(parsed_payload[sensor_key])
 
     def on_lost():
+        _LOGGER.debug("Zeroing %s live sensors after loss of data", len(sensors_to_zero_on_lost))
         for sensor_key in sensors_to_zero_on_lost:
             inverter_sensors[sensor_key].received_message(0)
 
     reader.on_payload = on_payload
     reader.on_lost = on_lost
 
-    _LOGGER.debug("Adding FoxESS T Series sensors to Home Assistant")
+    _LOGGER.debug("Adding %s FoxESS T Series sensors to Home Assistant", len(inverter_sensors))
     async_add_entities(inverter_sensors.values(), update_before_add=True)
 
 class FoxESSTSeriesSensor(SensorEntity):

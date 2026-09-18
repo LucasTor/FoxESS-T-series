@@ -24,6 +24,7 @@ PLATFORMS = ["sensor"]
 
 async def async_setup_entry(hass, entry) -> bool:
     """Set up platform from a ConfigEntry."""
+    _LOGGER.debug("Setting up entry %s with data %s", entry.entry_id, dict(entry.data))
     reader = InverterReader(
         host=entry.data.get(CONF_IP_ADDRESS),
         port=entry.data.get(CONF_PORT),
@@ -39,9 +40,11 @@ async def async_setup_entry(hass, entry) -> bool:
         # still starting up.
         try:
             await reader.async_connect()
-        except ConfigEntryNotReady:
+        except ConfigEntryNotReady as error:
+            _LOGGER.debug("Serial port not ready yet, Home Assistant will retry: %s", error)
             raise
         except Exception as error:  # noqa: BLE001
+            _LOGGER.debug("Serial port could not be opened, Home Assistant will retry: %s", error)
             raise ConfigEntryNotReady(
                 f"Unable to open serial port {entry.data.get(CONF_SERIAL_PORT)}: {error}"
             ) from error
@@ -52,13 +55,16 @@ async def async_setup_entry(hass, entry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     reader.start()
+    _LOGGER.debug("Entry %s set up using %s", entry.entry_id, reader.describe())
     return True
 
 
 async def async_unload_entry(hass, entry) -> bool:
     """Unload a config entry."""
+    _LOGGER.debug("Unloading entry %s", entry.entry_id)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     reader = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if reader is not None:
         await reader.async_stop()
+    _LOGGER.debug("Entry %s unloaded (platforms ok=%s)", entry.entry_id, unload_ok)
     return unload_ok

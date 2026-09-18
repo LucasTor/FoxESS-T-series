@@ -99,7 +99,10 @@ def parse_inverter_payload(payload, payload_version):
 
         return result
     except Exception as e:
-        _LOGGER.debug(e)
+        _LOGGER.debug(
+            "Failed to parse %s byte payload with payload version %s: %s: %s (payload: %s)",
+            len(payload), payload_version, type(e).__name__, e, payload.hex(),
+        )
         return None
 
 def calculate_crc(msg) -> int:
@@ -122,7 +125,10 @@ def validate_inverter_payload(payload):
     function_code_valid = received_function_code == expected_function_code
 
     if(not function_code_valid):
-        _LOGGER.debug("Invalid message function code.")
+        _LOGGER.debug(
+            "Invalid message function code: got 0x%02x, expected 0x%02x",
+            received_function_code, expected_function_code,
+        )
         return False
 
     expected_header = bytes.fromhex("7E7E")
@@ -131,7 +137,7 @@ def validate_inverter_payload(payload):
     header_valid = received_header == expected_header
 
     if(not header_valid):
-        _LOGGER.debug("Invalid message header.")
+        _LOGGER.debug("Invalid message header: got %s, expected %s", received_header.hex(), expected_header.hex())
         return False
     
     expected_footer = bytes.fromhex("E7E7")
@@ -140,7 +146,7 @@ def validate_inverter_payload(payload):
     footer_valid = received_footer == expected_footer
     
     if(not footer_valid):
-        _LOGGER.debug("Invalid message footer.")
+        _LOGGER.debug("Invalid message footer: got %s, expected %s", received_footer.hex(), expected_footer.hex())
         return False
 
     received_crc = payload[-4:-2]
@@ -149,7 +155,10 @@ def validate_inverter_payload(payload):
     crc_valid = received_crc == calculated_crc
 
     if(not crc_valid):
-        _LOGGER.error("Invalid message checksum.")
+        _LOGGER.error(
+            "Invalid message checksum: got %s, calculated %s over %s bytes",
+            received_crc.hex(), calculated_crc.hex(), len(payload) - 6,
+        )
         return False
 
     return True

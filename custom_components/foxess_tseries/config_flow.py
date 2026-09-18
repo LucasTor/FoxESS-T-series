@@ -62,15 +62,18 @@ def ping_server(server: str, port: int, timeout=3):
     """Check the inverter is reachable. Blocking, run in an executor."""
     try:
         s = socket.create_connection((server, port), timeout=timeout)
-    except OSError:
+    except OSError as error:
+        _LOGGER.debug("TCP check to %s:%s failed: %s", server, port, error)
         return False
     else:
+        _LOGGER.debug("TCP check to %s:%s succeeded", server, port)
         s.close()
         return True
 
 
 async def validate_serial_port(serial_port: str, baudrate: int) -> str | None:
     """Try opening the serial port. Returns an error key or None when it works."""
+    _LOGGER.debug("Validating serial port %s at %s baud", serial_port, baudrate)
     reader = InverterReader(
         host=None,
         port=None,
@@ -80,14 +83,16 @@ async def validate_serial_port(serial_port: str, baudrate: int) -> str | None:
     )
     try:
         await reader.async_connect()
-    except ConfigEntryNotReady:
+    except ConfigEntryNotReady as error:
         # Raised by the ESPHome serial proxy stub while ESPHome is still loading.
+        _LOGGER.debug("Serial port %s belongs to an ESPHome device that is not ready: %s", serial_port, error)
         return "esphome_not_ready"
     except Exception as error:  # noqa: BLE001
-        _LOGGER.debug("Unable to open serial port %s: %s", serial_port, error)
+        _LOGGER.debug("Unable to open serial port %s: %s: %s", serial_port, type(error).__name__, error, exc_info=True)
         return "cannot_connect"
     finally:
         await reader.async_disconnect()
+    _LOGGER.debug("Serial port %s opened successfully", serial_port)
     return None
 
 
@@ -98,6 +103,7 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(step_id="user", data_schema=CONNECTION_TYPE_SCHEMA)
 
+        _LOGGER.debug("Connection type selected: %s", user_input[CONF_CONNECTION_TYPE])
         if user_input[CONF_CONNECTION_TYPE] == CONNECTION_TYPE_SERIAL:
             return await self.async_step_serial()
         return await self.async_step_tcp()
@@ -106,6 +112,7 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            _LOGGER.debug("TCP step submitted: %s", user_input)
             reachable = await self.hass.async_add_executor_job(
                 ping_server, user_input[CONF_IP_ADDRESS], user_input[CONF_PORT]
             )
@@ -126,6 +133,7 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            _LOGGER.debug("Serial step submitted: %s", user_input)
             error = await validate_serial_port(user_input[CONF_SERIAL_PORT], user_input[CONF_BAUDRATE])
             if error is None:
                 return self.async_create_entry(
