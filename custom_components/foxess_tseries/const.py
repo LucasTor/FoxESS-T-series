@@ -1,1 +1,16 @@
 DOMAIN = "foxess_tseries"
+
+CONF_CONNECTION_TYPE = "connection_type"
+CONF_IP_ADDRESS = "ip_address"
+CONF_PORT = "port"
+CONF_SERIAL_PORT = "serial_port"
+CONF_BAUDRATE = "baudrate"
+CONF_PAYLOAD_VERSION = "payload_version"
+
+CONNECTION_TYPE_TCP = "tcp"
+CONNECTION_TYPE_SERIAL = "serial"
+
+DEFAULT_IP_ADDRESS = "192.168.0.129"
+DEFAULT_PORT = 502
+DEFAULT_BAUDRATE = 9600
+DEFAULT_PAYLOAD_VERSION = 0

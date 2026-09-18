@@ -4,9 +4,15 @@
 
 This integration was mainly created to solve the issue for the SIW200G and SIW400G WEG inverters, really common in Brazil, which are made by FoxESS, being the T series.
 
-The integration now supports both RS485 TCP Bridges as well as RS485 USB Adapters (the one we tested and know it's working is the WaveShare RS485 to USB (B))
+The integration supports three ways of talking to the inverter:
 
-To connect your inverter to either adapter (TCP or USB), on the newer models, please refer to [this guide](https://github.com/LucasTor/FoxESS-T-series/issues/2#issuecomment-2088445998), for older models, a RS485 comm port should be found on one of the connectors on the inverter.
+- RS485 TCP Bridges
+- RS485 USB Adapters (the one we tested and know it's working is the WaveShare RS485 to USB (B))
+- [ESPHome serial proxies](https://esphome.io/components/serial_proxy/): an ESP board with an RS485 transceiver, exposed to Home Assistant over the network by the ESPHome integration
+
+To connect your inverter to any adapter (TCP, USB or ESP), on the newer models, please refer to [this guide](https://github.com/LucasTor/FoxESS-T-series/issues/2#issuecomment-2088445998), for older models, a RS485 comm port should be found on one of the connectors on the inverter.
+
+Home Assistant 2026.5 or newer is required (it introduced the serial port selector and the `serialx` driver used for USB adapters and ESPHome proxies).
 ## Installation
 [![Add Integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=foxess_tseries)
 [![Add Repository](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=LucasTor&repository=FoxESS-T-series&category=integration)
@@ -27,6 +33,32 @@ To connect your inverter to either adapter (TCP or USB), on the newer models, pl
 1. Copy the `custom_components/foxess_tseries` directory to your Home Assistant `custom_components` directory
 2. Restart Home Assistant
 
+
+## Connecting through an ESPHome serial proxy
+
+1. Flash an ESPHome device with a UART wired to an RS485 transceiver and add the `serial_proxy` component:
+
+   ```yaml
+   uart:
+     - id: inverter_uart
+       tx_pin: GPIO17
+       rx_pin: GPIO16
+       baud_rate: 9600
+
+   api:
+
+   serial_proxy:
+     - id: inverter_serial
+       uart_id: inverter_uart
+       name: FoxESS Inverter
+       port_type: RS485
+   ```
+
+2. Add the ESPHome device to Home Assistant (Settings > Devices & services > ESPHome) and wait for it to show as connected.
+3. Add this integration, choose **Serial port (USB adapter or ESPHome serial proxy)** as the connection type and pick the ESPHome port (it is listed by the name given in `serial_proxy`, next to any local USB adapters).
+4. Leave the baud rate at 9600 unless your inverter is configured differently.
+
+If the ESPHome device is offline when Home Assistant starts, the integration waits and retries automatically once the ESPHome integration reconnects.
 
 ## Configuring the payload version
 
