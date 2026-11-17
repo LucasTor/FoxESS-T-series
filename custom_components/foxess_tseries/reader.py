@@ -17,7 +17,12 @@ from typing import Any
 
 import serialx
 
-from .helpers.inverter_payload import parse_inverter_payload, validate_inverter_payload
+from .helpers.inverter_payload import (
+    looks_plausible,
+    parse_inverter_payload,
+    suggest_payload_version,
+    validate_inverter_payload,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +75,7 @@ class InverterReader:
         self._connect_attempts = 0
         self._frames_ok = 0
         self._frames_rejected = 0
+        self._payload_version_checked = False
 
         _LOGGER.debug(
             "Reader created for %s (payload version %s, connect timeout %ss, "
@@ -273,6 +279,8 @@ class InverterReader:
             )
             return
 
+        self._check_payload_version(data)
+
         parsed_payload = parse_inverter_payload(data, self._payload_version)
         if not parsed_payload:
             self._frames_rejected += 1
@@ -298,6 +306,28 @@ class InverterReader:
             _LOGGER.debug("Data resumed after values were zeroed")
         self._values_zeroed = False
         self.on_payload(parsed_payload)
+
+    def _check_payload_version(self, data: bytes) -> None:
+        """Warn once if the frame only makes sense with the other payload version."""
+        if self._payload_version_checked:
+            return
+
+        if looks_plausible(parse_inverter_payload(data, self._payload_version)):
+            _LOGGER.debug("Payload version %s looks right for %s", self._payload_version, self.describe())
+            self._payload_version_checked = True
+            return
+
+        suggested = suggest_payload_version(data, self._payload_version)
+        if suggested is None:
+            # Neither version decodes plausibly (e.g. the grid is down); check the next frame.
+            return
+        self._payload_version_checked = True
+        _LOGGER.warning(
+            "Frames from %s do not decode plausibly with payload version %s but do with "
+            "version %s (grid frequency is out of range otherwise). Change the payload "
+            "version from the integration's Configure button. Frame: %s",
+            self.describe(), self._payload_version, suggested, data.hex(),
+        )
 
     def _seconds_since_last_message(self) -> float:
         return time.monotonic() - self._last_message

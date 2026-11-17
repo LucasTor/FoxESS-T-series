@@ -105,6 +105,32 @@ def parse_inverter_payload(payload, payload_version):
         )
         return None
 
+PAYLOAD_VERSIONS = (0, 1)
+GRID_FREQUENCY_RANGE = (45.0, 65.0)
+
+
+def looks_plausible(parsed_payload) -> bool:
+    """Return True when the grid frequency is in a realistic range.
+
+    Decoding with the wrong payload version shifts every field by 6 bytes,
+    which puts something other than the frequency into grid_frequency_R.
+    """
+    if not parsed_payload:
+        return False
+    low, high = GRID_FREQUENCY_RANGE
+    return low <= parsed_payload['grid_frequency_R'] <= high
+
+
+def suggest_payload_version(payload, payload_version):
+    """Return the other payload version when only it decodes plausibly, else None."""
+    if looks_plausible(parse_inverter_payload(payload, payload_version)):
+        return None
+    for candidate in PAYLOAD_VERSIONS:
+        if candidate != payload_version and looks_plausible(parse_inverter_payload(payload, candidate)):
+            return candidate
+    return None
+
+
 def calculate_crc(msg) -> int:
     crc = 0xFFFF
     for n in range(len(msg)):

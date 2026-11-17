@@ -7,6 +7,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.selector import (
@@ -43,10 +44,13 @@ CONNECTION_TYPE_SCHEMA = vol.Schema({
     ),
 })
 
+# 0: older firmwares, 1: newer firmwares with 6 extra bytes after the header.
+PAYLOAD_VERSION_VALIDATOR = vol.All(vol.Coerce(int), vol.Range(min=0, max=1))
+
 TCP_SCHEMA = vol.Schema({
     vol.Required(CONF_IP_ADDRESS, default=DEFAULT_IP_ADDRESS): str,
     vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-    vol.Optional(CONF_PAYLOAD_VERSION, default=DEFAULT_PAYLOAD_VERSION): int,
+    vol.Optional(CONF_PAYLOAD_VERSION, default=DEFAULT_PAYLOAD_VERSION): PAYLOAD_VERSION_VALIDATOR,
 })
 
 # The serial port selector lists local USB adapters and ESPHome serial proxies
@@ -54,7 +58,7 @@ TCP_SCHEMA = vol.Schema({
 SERIAL_SCHEMA = vol.Schema({
     vol.Required(CONF_SERIAL_PORT): SerialPortSelector(),
     vol.Optional(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    vol.Optional(CONF_PAYLOAD_VERSION, default=DEFAULT_PAYLOAD_VERSION): int,
+    vol.Optional(CONF_PAYLOAD_VERSION, default=DEFAULT_PAYLOAD_VERSION): PAYLOAD_VERSION_VALIDATOR,
 })
 
 
@@ -97,7 +101,30 @@ async def validate_serial_port(serial_port: str, baudrate: int) -> str | None:
 
 
 class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    # Version 2 scopes sensor unique IDs to the config entry (see async_migrate_entry).
+    VERSION = 2
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return OptionsFlowHandler()
+
+    def _already_configured(self, *, serial_port: str | None = None, host: str | None = None, port: int | None = None) -> bool:
+        """Return True when an entry already reads from the same connection.
+
+        Two entries on one connection would both decode every frame, and only
+        one of them can own the sensors.
+        """
+        for entry in self._async_current_entries(include_ignore=False):
+            entry_serial = entry.data.get(CONF_SERIAL_PORT) or None
+            if serial_port is not None:
+                if entry_serial == serial_port:
+                    return True
+            elif entry_serial is None and (
+                entry.data.get(CONF_IP_ADDRESS) == host and entry.data.get(CONF_PORT) == port
+            ):
+                return True
+        return False
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is None:
@@ -113,6 +140,8 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             _LOGGER.debug("TCP step submitted: %s", user_input)
+            if self._already_configured(host=user_input[CONF_IP_ADDRESS], port=user_input[CONF_PORT]):
+                return self.async_abort(reason="already_configured")
             reachable = await self.hass.async_add_executor_job(
                 ping_server, user_input[CONF_IP_ADDRESS], user_input[CONF_PORT]
             )
@@ -134,6 +163,8 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             _LOGGER.debug("Serial step submitted: %s", user_input)
+            if self._already_configured(serial_port=user_input[CONF_SERIAL_PORT]):
+                return self.async_abort(reason="already_configured")
             error = await validate_serial_port(user_input[CONF_SERIAL_PORT], user_input[CONF_BAUDRATE])
             if error is None:
                 return self.async_create_entry(
@@ -146,4 +177,24 @@ class CustomFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="serial",
             data_schema=self.add_suggested_values_to_schema(SERIAL_SCHEMA, user_input),
             errors=errors,
+        )
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Change the payload version without removing the integration."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        if user_input is not None:
+            _LOGGER.debug("Options submitted for entry %s: %s", self.config_entry.entry_id, user_input)
+            return self.async_create_entry(data=user_input)
+
+        current = self.config_entry.options.get(
+            CONF_PAYLOAD_VERSION,
+            self.config_entry.data.get(CONF_PAYLOAD_VERSION, DEFAULT_PAYLOAD_VERSION),
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(CONF_PAYLOAD_VERSION, default=int(current)): PAYLOAD_VERSION_VALIDATOR,
+            }),
         )

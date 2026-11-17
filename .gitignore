@@ -1,4 +1,4 @@
 .venv
 custom_components/__pycache__
 custom_components/foxess_tseries/__pycache__
-test-*.py
+test-*.py__pycache__/
