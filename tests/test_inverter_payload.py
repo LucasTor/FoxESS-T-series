@@ -81,3 +81,35 @@ def test_reader_does_not_warn_on_right_version(caplog):
     reader = _reader(0)
     reader._handle_frame(build_frame(0))
     assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def _with(frame: bytes, index: int, value: int) -> bytes:
+    changed = bytearray(frame)
+    changed[index] = value
+    return bytes(changed)
+
+
+def test_rejects_wrong_function_code():
+    assert not validate_inverter_payload(_with(build_frame(0), 2, 0x01))
+
+
+def test_rejects_wrong_header():
+    assert not validate_inverter_payload(_with(build_frame(0), 0, 0x00))
+
+
+def test_rejects_wrong_footer():
+    assert not validate_inverter_payload(_with(build_frame(0), -1, 0x00))
+
+
+def test_rejects_bad_checksum():
+    assert not validate_inverter_payload(_with(build_frame(0), 30, 0xAA))
+
+
+def test_parse_returns_none_for_truncated_frame():
+    assert parse_inverter_payload(build_frame(0)[:40], 0) is None
+
+
+def test_suggest_returns_none_when_no_version_fits():
+    frame = bytearray(build_frame(0))
+    frame[9:9 + 62] = b"\x00" * 62  # all zeros: no plausible frequency either way
+    assert suggest_payload_version(bytes(frame), 1) is None
