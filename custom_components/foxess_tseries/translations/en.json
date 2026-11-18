@@ -29,6 +29,9 @@
     "error": {
       "cannot_connect": "Unable to reach inverter.",
       "esphome_not_ready": "The ESPHome device is not connected yet. Wait for it to come online and try again."
+    },
+    "abort": {
+      "already_configured": "An entry for this inverter connection already exists. Change its payload version from the integration's Configure button instead of adding it again."
     }
   },
   "selector": {
@@ -36,6 +39,17 @@
       "options": {
         "tcp": "RS485 to TCP bridge (IP address)",
         "serial": "Serial port (USB adapter or ESPHome serial proxy)"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FoxESS T Series options",
+        "description": "Payload version 0 is used by older firmwares, 1 by newer ones that add 6 bytes after the header. If the values look shifted (e.g. grid frequency is not around 50/60 Hz), try the other version.",
+        "data": {
+          "payload_version": "Payload Version (Check documentation)"
+        }
       }
     }
   }
