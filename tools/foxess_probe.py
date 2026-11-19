@@ -5,6 +5,7 @@ Usage (needs Python 3.8+, no extra packages):
 
     python3 tools/foxess_probe.py <EW11 IP> [--port 502] [--listen SECONDS] [--send]
     python3 tools/foxess_probe.py <EW11 IP> --scan 10000-12000
+    python3 tools/foxess_probe.py <EW11 IP> --tables 10000,10100,10700
 
 By default it only LISTENS (10 minutes; 40 seconds with --send; not at all with --scan) and prints every frame on the bus,
 including the factory Wi-Fi dongle's requests and the inverter's replies if
@@ -17,8 +18,10 @@ cycle, so it is unlikely to collide with traffic on a shared bus.
 
 --scan START-END reads that register range (Modbus function 0x04, S-series
 7F7F markers, which a T-series SIW200G answers), in blocks of 10, sending only
-in the quiet gap after each inverter frame, retrying when the inverter is
-busy, and reading registers one by one at the edges of readable ranges. It then compares every register
+in the quiet gap after each inverter frame,
+finding the size of each register table (exception 6 marks a table start
+read with the wrong count), and reading registers one by one at the edges
+of readable ranges. It then compares every register
 with the inverter's own 0x02 data frame captured during the scan, prints the
 likely matches (e.g. which register holds the grid voltage) and saves all raw
 results to a JSON file.
@@ -154,8 +157,7 @@ SCAN_CHUNK = 10
 SCAN_GAP_SECONDS = 18  # stop sending this long after an inverter frame
 SCAN_REPLY_SECONDS = 3
 SCAN_REQUEST_PAUSE = 0.3  # between requests, so the inverter keeps up
-BUSY_RETRIES = 3  # retries for Modbus exception 6 (device busy)
-BUSY_PAUSE = 1.0
+MAX_COUNT = 125  # Modbus limit for one read
 DATA_FRAME_WAIT = 100  # the 0x02 frame comes every 90 seconds
 S_SERIES_MARKERS = (b"\x7f\x7f", b"\xf7\xf7")
 
@@ -197,7 +199,7 @@ def crc_ok(frame):
     return len(frame) >= 13 and frame[-4:-2] == crc16(frame[2:-4])
 
 
-def run_requests(sock, buffer, queue, function, data_frames, label):
+def run_requests(sock, buffer, queue, function, data_frames, label, on_result=None):
     """Send the (start, count) reads in queue, only in the quiet gaps.
 
     Returns the buffer and {(start, count): result}, where result is a list of
@@ -235,12 +237,11 @@ def run_requests(sock, buffer, queue, function, data_frames, label):
                 nonzero = sum(1 for v in results[block] if v)
                 print(f"  {register}+{count}: ok, {nonzero} non-zero")
             elif len(data) >= 3 and data[1] & 0x80:
-                if data[2] == 6 and tries < BUSY_RETRIES:
-                    attempts[block] = tries + 1
-                    queue.insert(0, block)
-                    time.sleep(BUSY_PAUSE)
-                else:
-                    results[block] = f"exception {data[2]}"
+                # Exception 6 comes back for valid table starts read with the
+                # wrong count, so it is a result, not a reason to retry.
+                results[block] = f"exception {data[2]}"
+            if block in results and on_result is not None:
+                on_result(block, results[block], queue)
             if len(results) - reported >= 20 or not queue:
                 reported = len(results)
                 print(f"  {label}: {len(results)}/{total} done")
@@ -248,6 +249,38 @@ def run_requests(sock, buffer, queue, function, data_frames, label):
             if any(is_push(f) for f in frames):
                 break  # the inverter started its next frame; wait for the next gap
     return buffer, results
+
+
+def find_table_sizes(sock, buffer, starts, function, data_frames, results):
+    """Try counts 1..MAX_COUNT at each table start until one is accepted."""
+    sizes = {}
+    print(f"\n  Finding the size of {len(starts)} tables at {', '.join(map(str, starts))} "
+          f"(trying counts 1-{MAX_COUNT}):")
+
+    def on_result(block, result, queue):
+        register, count = block
+        if isinstance(result, list):
+            sizes[register] = max(sizes.get(register, 0), count)
+            # Also check whether a longer read is accepted.
+            if count < MAX_COUNT and (register, count + 1) not in results:
+                queue.insert(0, (register, count + 1))
+            return
+        if result == "exception 6" and register not in sizes and count < MAX_COUNT:
+            queue.insert(0, (register, count + 1))
+        elif result != "exception 6":
+            print(f"  {register}: {result} at count {count}, giving up on this table")
+
+    queue = []
+    for register in starts:
+        count = 1
+        while (register, count) in results and count < MAX_COUNT:
+            count += 1  # skip counts already tried by the block scan
+        queue.append((register, count))
+    buffer, found = run_requests(sock, buffer, queue, function, data_frames, "size probes", on_result)
+    results.update(found)
+    for register, count in sizes.items():
+        print(f"  table {register}: size {count}")
+    return buffer, sizes
 
 
 def scan(sock, buffer, start, end, function, data_frames):
@@ -270,6 +303,14 @@ def scan(sock, buffer, start, end, function, data_frames):
         print(f"\n  Reading {len(singles)} registers one by one at the edges of readable ranges:")
         buffer, single_results = run_requests(sock, buffer, singles, function, data_frames, "registers")
         results.update(single_results)
+
+    # The inverter keeps its values in fixed-size tables: a read must start at a
+    # table start with exactly its size. Exception 6 marks a table start read
+    # with the wrong count, so find the size by trying counts.
+    starts = sorted(b[0] for b, r in results.items() if r == "exception 6")
+    if starts:
+        buffer, sizes = find_table_sizes(sock, buffer, starts, function, data_frames, results)
+        print("\n  Tables: " + (", ".join(f"{a}+{n}" for a, n in sorted(sizes.items())) or "none sized"))
 
     registers = {}
     for (register, _), result in results.items():
@@ -372,12 +413,15 @@ def main():
     parser.add_argument("--send", action="store_true", help="also send read requests after listening")
     parser.add_argument("--scan", type=parse_range, metavar="START-END",
                         help="read this input register range and match it with the data frame")
+    parser.add_argument("--tables", type=lambda v: [int(x) for x in v.split(",") if x.strip()],
+                        metavar="START,START,...",
+                        help="skip the block scan and only find the size of tables at these starts")
     parser.add_argument("--function", type=lambda v: int(v, 0), default=0x04,
                         help="Modbus read function for --scan (default 0x04)")
     parser.add_argument("--payload-version", type=int, default=0, choices=(0, 1))
     args = parser.parse_args()
     if args.listen is None:
-        args.listen = 0 if args.scan else SEND_LISTEN_SECONDS if args.send else LISTEN_SECONDS
+        args.listen = 0 if (args.scan or args.tables) else SEND_LISTEN_SECONDS if args.send else LISTEN_SECONDS
 
     print(f"Connecting to {args.host}:{args.port} ...")
     sock = socket.create_connection((args.host, args.port), timeout=10)
@@ -411,6 +455,22 @@ def main():
         buffer, registers, results = scan(sock, buffer, start, end, args.function, data_frames)
         report(registers, results, data_frames, args.payload_version,
                f"foxess_scan_{start}-{end - 1}_{time.strftime('%Y%m%d-%H%M%S')}.json")
+
+    if args.tables:
+        data_frames = [f for f in listened if f[2] == 0x02 and crc_ok(f)]
+        results = {}
+        buffer, sizes = find_table_sizes(sock, buffer, sorted(set(args.tables)), args.function,
+                                         data_frames, results)
+        registers = {}
+        for (register, _), result in results.items():
+            if isinstance(result, list):
+                registers.update({register + i: v for i, v in enumerate(result)})
+        if not data_frames:
+            print(f"\n  Waiting up to {DATA_FRAME_WAIT}s for a 0x02 data frame to compare with:")
+            frames, buffer = read_frames(sock, buffer, DATA_FRAME_WAIT, stop=lambda f: f[2] == 0x02)
+            data_frames += [f for f in frames if f[2] == 0x02 and crc_ok(f)]
+        report(registers, results, data_frames, args.payload_version,
+               f"foxess_tables_{time.strftime('%Y%m%d-%H%M%S')}.json")
 
     sock.close()
     print("\nDone. Frames with function 0x11 are requests (e.g. from the factory dongle);")
