@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Check whether a FoxESS inverter answers register read requests.
-
-Read-only: it only sends Modbus "read registers" requests (function 0x04 or
-0x03), which cannot change any inverter setting.
+"""Sniff the inverter's RS485 traffic, and optionally test register reads.
 
 Usage (needs Python 3.8+, no extra packages):
 
-    python3 tools/foxess_probe.py <EW11 IP address> [port]
+    python3 tools/foxess_probe.py <EW11 IP> [--port 502] [--listen SECONDS] [--send]
 
-Run it during daylight, while the inverter is on. It takes about 2 minutes:
-1. it listens for 70 seconds and prints every frame the inverter sends;
-2. it sends a few read requests in the format captured from an S-series
-   inverter (issue #1) and prints any replies.
+By default it only LISTENS (10 minutes) and prints every frame on the bus,
+including the factory Wi-Fi dongle's requests and the inverter's replies if
+the dongle is connected in parallel. Listening never transmits anything.
 
-Paste the whole output into the GitHub issue.
+--send also transmits a few Modbus "read registers" requests (function 0x04
+or 0x03) after listening. These cannot change inverter settings, but on a bus
+shared with the factory dongle they can collide with its traffic, so the
+cloud may miss a data point. Only use it after listening.
+
+Run it during daylight, while the inverter is on, and paste the whole output
+into the GitHub issue.
 """
+import argparse
 import socket
-import sys
 import time
 
-LISTEN_SECONDS = 70
+LISTEN_SECONDS = 600
 REPLY_WAIT_SECONDS = 6
 REQUEST_ID = bytes.fromhex("C5ECC56C")  # the ID seen in the S-series capture
 
@@ -56,6 +58,13 @@ def describe(frame: bytes) -> str:
     length = int.from_bytes(frame[7:9], "big")
     crc_ok = frame[-4:-2] == crc16(frame[2:-4])
     text = f"function 0x{function:02x}, {len(frame)} bytes, declared length {length}, checksum {'ok' if crc_ok else 'BAD'}"
+    if function == 0x11 and crc_ok:
+        data = frame[9:-4]
+        if len(data) >= 6:
+            register = int.from_bytes(data[2:4], "big")
+            count = int.from_bytes(data[4:6], "big")
+            text += (f"\n      REQUEST: unit {data[0]}, Modbus function 0x{data[1]:02x}, "
+                     f"registers {register}-{register + count - 1} ({count}), ID {frame[3:7].hex()}")
     if function in (0x91, 0x92) and crc_ok:
         data = frame[9:-4]
         if len(data) >= 3 and data[1] in (0x03, 0x04):
@@ -110,30 +119,33 @@ def receive(sock, seconds, buffer=b""):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
-    host = sys.argv[1]
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 502
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("host", help="IP address of the RS485-to-TCP bridge (e.g. the EW11)")
+    parser.add_argument("--port", type=int, default=502)
+    parser.add_argument("--listen", type=int, default=LISTEN_SECONDS, help="seconds to listen (default 600)")
+    parser.add_argument("--send", action="store_true", help="also send read requests after listening")
+    args = parser.parse_args()
 
-    print(f"Connecting to {host}:{port} ...")
-    sock = socket.create_connection((host, port), timeout=10)
+    print(f"Connecting to {args.host}:{args.port} ...")
+    sock = socket.create_connection((args.host, args.port), timeout=10)
     print("Connected.\n")
 
-    print(f"1) Listening for {LISTEN_SECONDS}s to everything the inverter sends:")
-    buffer = receive(sock, LISTEN_SECONDS)
+    print(f"1) Listening for {args.listen}s to everything on the bus (nothing is sent):")
+    buffer = receive(sock, args.listen)
 
-    print("\n2) Sending read requests:")
-    for name, (start_marker, end_marker) in MARKERS.items():
-        for function, register, count in READS:
-            request = build_request(start_marker, end_marker, function, register, count)
-            print(f"\n  -> {name}, Modbus function 0x{function:02x}, registers {register}+{count}")
-            print(f"      sent: {request.hex()}")
-            sock.sendall(request)
-            buffer = receive(sock, REPLY_WAIT_SECONDS, buffer)
+    if args.send:
+        print("\n2) Sending read requests:")
+        for name, (start_marker, end_marker) in MARKERS.items():
+            for function, register, count in READS:
+                request = build_request(start_marker, end_marker, function, register, count)
+                print(f"\n  -> {name}, Modbus function 0x{function:02x}, registers {register}+{count}")
+                print(f"      sent: {request.hex()}")
+                sock.sendall(request)
+                buffer = receive(sock, REPLY_WAIT_SECONDS, buffer)
 
     sock.close()
-    print("\nDone. A line starting with REPLY means the inverter answered.")
+    print("\nDone. Frames with function 0x11 are requests (e.g. from the factory dongle);")
+    print("REPLY lines are the inverter's answers.")
 
 
 if __name__ == "__main__":
