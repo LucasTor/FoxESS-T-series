@@ -5,7 +5,7 @@ Usage (needs Python 3.8+, no extra packages):
 
     python3 tools/foxess_probe.py <EW11 IP> [--port 502] [--listen SECONDS] [--send]
 
-By default it only LISTENS (10 minutes) and prints every frame on the bus,
+By default it only LISTENS (10 minutes, or 40 seconds with --send) and prints every frame on the bus,
 including the factory Wi-Fi dongle's requests and the inverter's replies if
 the dongle is connected in parallel. Listening never transmits anything.
 
@@ -22,6 +22,7 @@ import socket
 import time
 
 LISTEN_SECONDS = 600
+SEND_LISTEN_SECONDS = 40
 REPLY_WAIT_SECONDS = 10
 SEND_DELAY_SECONDS = 2
 REQUEST_ID = bytes.fromhex("C5ECC56C")  # the ID seen in the S-series capture
@@ -129,15 +130,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("host", help="IP address of the RS485-to-TCP bridge (e.g. the EW11)")
     parser.add_argument("--port", type=int, default=502)
-    parser.add_argument("--listen", type=int, default=LISTEN_SECONDS, help="seconds to listen (default 600)")
+    parser.add_argument("--listen", type=int, default=None,
+                        help="seconds to listen first (default 600, or 40 with --send)")
     parser.add_argument("--send", action="store_true", help="also send read requests after listening")
     args = parser.parse_args()
+    if args.listen is None:
+        args.listen = SEND_LISTEN_SECONDS if args.send else LISTEN_SECONDS
 
     print(f"Connecting to {args.host}:{args.port} ...")
     sock = socket.create_connection((args.host, args.port), timeout=10)
     print("Connected.\n")
 
-    print(f"1) Listening for {args.listen}s to everything on the bus (nothing is sent):")
+    then = ", then sending read requests" if args.send else " (nothing is sent)"
+    print(f"1) Listening for {args.listen}s to everything on the bus{then}:")
     buffer = receive(sock, args.listen)
 
     if args.send:
