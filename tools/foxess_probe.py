@@ -6,7 +6,7 @@ Usage (needs Python 3.8+, no extra packages):
     python3 tools/foxess_probe.py <EW11 IP> [--port 502] [--listen SECONDS] [--send]
     python3 tools/foxess_probe.py <EW11 IP> --scan 10000-12000
 
-By default it only LISTENS (10 minutes, or 40 seconds with --send) and prints every frame on the bus,
+By default it only LISTENS (10 minutes; 40 seconds with --send; not at all with --scan) and prints every frame on the bus,
 including the factory Wi-Fi dongle's requests and the inverter's replies if
 the dongle is connected in parallel. Listening never transmits anything.
 
@@ -16,8 +16,9 @@ sent 2 seconds after an inverter frame, in the quiet part of its 30-second
 cycle, so it is unlikely to collide with traffic on a shared bus.
 
 --scan START-END reads that register range (Modbus function 0x04, S-series
-7F7F markers, which a T-series SIW200G answers), in blocks of 50, sending only
-in the quiet gap after each inverter frame. It then compares every register
+7F7F markers, which a T-series SIW200G answers), in blocks of 10, sending only
+in the quiet gap after each inverter frame, retrying when the inverter is
+busy, and reading registers one by one at the edges of readable ranges. It then compares every register
 with the inverter's own 0x02 data frame captured during the scan, prints the
 likely matches (e.g. which register holds the grid voltage) and saves all raw
 results to a JSON file.
@@ -116,7 +117,7 @@ def split_frames(buffer: bytes):
         buffer = buffer[end + 2:]
 
 
-def receive(sock, seconds, buffer=b"", until_frame=False):
+def receive(sock, seconds, buffer=b"", until_frame=False, collected=None):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         sock.settimeout(max(0.1, deadline - time.monotonic()))
@@ -132,6 +133,8 @@ def receive(sock, seconds, buffer=b"", until_frame=False):
         for frame in frames:
             print(f"  [{time.strftime('%H:%M:%S')}] {describe(frame)}")
             print(f"      hex: {frame.hex()}")
+        if collected is not None:
+            collected += frames
         if until_frame and frames:
             break
     return buffer
@@ -147,9 +150,13 @@ DATA_FIELDS = [
     "PV3_voltage", "PV3_current", "PV3_power", "PV4_voltage", "PV4_current", "PV4_power",
     "boost_temperature", "inverter_temperature", "ambient_temperature", "todays_yield",
 ]
-SCAN_CHUNK = 50
+SCAN_CHUNK = 10
 SCAN_GAP_SECONDS = 18  # stop sending this long after an inverter frame
 SCAN_REPLY_SECONDS = 3
+SCAN_REQUEST_PAUSE = 0.3  # between requests, so the inverter keeps up
+BUSY_RETRIES = 3  # retries for Modbus exception 6 (device busy)
+BUSY_PAUSE = 1.0
+DATA_FRAME_WAIT = 100  # the 0x02 frame comes every 90 seconds
 S_SERIES_MARKERS = (b"\x7f\x7f", b"\xf7\xf7")
 
 
@@ -190,15 +197,17 @@ def crc_ok(frame):
     return len(frame) >= 13 and frame[-4:-2] == crc16(frame[2:-4])
 
 
-def scan(sock, buffer, start, end, function, payload_version):
-    blocks = [(a, min(SCAN_CHUNK, end - a)) for a in range(start, end, SCAN_CHUNK)]
-    retried = set()
-    registers, errors, data_frames = {}, [], []
-    total = len(blocks)
-    print(f"\n2) Scanning registers {start}-{end - 1} with function 0x{function:02x} "
-          f"in {total} blocks of up to {SCAN_CHUNK} (only in the quiet gap after inverter frames):")
+def run_requests(sock, buffer, queue, function, data_frames, label):
+    """Send the (start, count) reads in queue, only in the quiet gaps.
 
-    while blocks:
+    Returns the buffer and {(start, count): result}, where result is a list of
+    register values, "exception N" or "no reply".
+    """
+    results = {}
+    attempts = {}
+    total = len(queue)
+    reported = 0
+    while queue:
         frames, buffer = read_frames(sock, buffer, 45, stop=is_push)
         data_frames += [f for f in frames if f[2] == 0x02 and crc_ok(f)]
         if not any(is_push(f) for f in frames):
@@ -206,54 +215,111 @@ def scan(sock, buffer, start, end, function, payload_version):
             continue
         gap_start = time.monotonic()
         time.sleep(SEND_DELAY_SECONDS)
-        while blocks and time.monotonic() - gap_start < SCAN_GAP_SECONDS:
-            register, count = blocks.pop(0)
+        while queue and time.monotonic() - gap_start < SCAN_GAP_SECONDS:
+            block = queue.pop(0)
+            register, count = block
             sock.sendall(build_request(*S_SERIES_MARKERS, function, register, count))
             frames, buffer = read_frames(sock, buffer, SCAN_REPLY_SECONDS, stop=lambda f: f[2] == 0x91)
             data_frames += [f for f in frames if f[2] == 0x02 and crc_ok(f)]
             replies = [f for f in frames if f[2] == 0x91 and crc_ok(f)]
-            done = total - len(blocks)
+            data = replies[-1][9:-4] if replies else b""
+            tries = attempts.get(block, 0)
             if not replies:
-                if register not in retried:
-                    retried.add(register)
-                    blocks.append((register, count))
-                    print(f"  [{done}/{total}] {register}+{count}: no reply, will retry")
+                if tries < 1:
+                    attempts[block] = tries + 1
+                    queue.append(block)
                 else:
-                    errors.append({"start": register, "count": count, "error": "no reply"})
-                    print(f"  [{done}/{total}] {register}+{count}: no reply")
-                continue
-            data = replies[-1][9:-4]
-            if len(data) >= 3 and data[1] == function:
-                values = [int.from_bytes(data[3 + i:5 + i], "big") for i in range(0, data[2], 2)]
-                registers.update({register + i: v for i, v in enumerate(values)})
-                nonzero = sum(1 for v in values if v)
-                print(f"  [{done}/{total}] {register}+{count}: ok, {nonzero} non-zero")
+                    results[block] = "no reply"
+            elif len(data) >= 3 and data[1] == function:
+                results[block] = [int.from_bytes(data[3 + i:5 + i], "big") for i in range(0, data[2], 2)]
+                nonzero = sum(1 for v in results[block] if v)
+                print(f"  {register}+{count}: ok, {nonzero} non-zero")
             elif len(data) >= 3 and data[1] & 0x80:
-                errors.append({"start": register, "count": count, "error": f"exception {data[2]}"})
-                print(f"  [{done}/{total}] {register}+{count}: Modbus exception {data[2]}")
+                if data[2] == 6 and tries < BUSY_RETRIES:
+                    attempts[block] = tries + 1
+                    queue.insert(0, block)
+                    time.sleep(BUSY_PAUSE)
+                else:
+                    results[block] = f"exception {data[2]}"
+            if len(results) - reported >= 20 or not queue:
+                reported = len(results)
+                print(f"  {label}: {len(results)}/{total} done")
+            time.sleep(SCAN_REQUEST_PAUSE)
             if any(is_push(f) for f in frames):
                 break  # the inverter started its next frame; wait for the next gap
-    return buffer, registers, errors, data_frames
+    return buffer, results
+
+
+def scan(sock, buffer, start, end, function, data_frames):
+    blocks = [(a, min(SCAN_CHUNK, end - a)) for a in range(start, end, SCAN_CHUNK)]
+    print(f"\n2) Scanning registers {start}-{end - 1} with function 0x{function:02x} in "
+          f"{len(blocks)} blocks of {SCAN_CHUNK} (only in the quiet gap after inverter frames):")
+    buffer, results = run_requests(sock, buffer, list(blocks), function, data_frames, "blocks")
+
+    # A block is refused as a whole if any of its registers is missing, so read
+    # registers one at a time where a refused block touches a readable one.
+    ok = {b for b, r in results.items() if isinstance(r, list)}
+    singles = []
+    for index, block in enumerate(blocks):
+        if block in ok or results.get(block) == "no reply":
+            continue
+        neighbours = blocks[max(0, index - 1):index] + blocks[index + 1:index + 2]
+        if any(n in ok for n in neighbours):
+            singles += [(block[0] + i, 1) for i in range(block[1])]
+    if singles:
+        print(f"\n  Reading {len(singles)} registers one by one at the edges of readable ranges:")
+        buffer, single_results = run_requests(sock, buffer, singles, function, data_frames, "registers")
+        results.update(single_results)
+
+    registers = {}
+    for (register, _), result in results.items():
+        if isinstance(result, list):
+            registers.update({register + i: v for i, v in enumerate(result)})
+
+    if not data_frames:
+        print(f"\n  Waiting up to {DATA_FRAME_WAIT}s for a 0x02 data frame to compare with:")
+        frames, buffer = read_frames(sock, buffer, DATA_FRAME_WAIT, stop=lambda f: f[2] == 0x02)
+        data_frames += [f for f in frames if f[2] == 0x02 and crc_ok(f)]
+    return buffer, registers, results
 
 
 def signed(value):
     return value - 0x10000 if value & 0x8000 else value
 
 
-def report(registers, errors, data_frames, payload_version, path):
+def ranges(addresses):
+    """Group sorted addresses into (first, last) runs."""
+    runs = []
+    for address in sorted(addresses):
+        if runs and address == runs[-1][1] + 1:
+            runs[-1][1] = address
+        else:
+            runs.append([address, address])
+    return runs
+
+
+def report(registers, results, data_frames, payload_version, path):
     print("\n3) Results")
     readable = sorted(registers)
     if readable:
-        print(f"  readable registers: {len(readable)}, non-zero:")
+        text = ", ".join(f"{a}-{b} ({b - a + 1})" if a != b else str(a) for a, b in ranges(readable))
+        print(f"  Readable registers: {text}")
+        print("  Non-zero values:")
         for address in readable:
             value = registers[address]
             if value:
                 print(f"    {address}: {value:6d}  0x{value:04x}  signed {signed(value):6d}")
-    for error in errors:
-        print(f"  {error['start']}+{error['count']}: {error['error']}")
+    else:
+        print("  No readable registers in this range.")
+    counts = {}
+    for result in results.values():
+        if not isinstance(result, list):
+            counts[result] = counts.get(result, 0) + 1
+    if counts:
+        print("  Refused reads: " + ", ".join(f"{n}x {kind}" for kind, n in sorted(counts.items())))
 
     matches = {}
-    if data_frames:
+    if data_frames and readable:
         raw = decode_data_frame(data_frames[-1], payload_version)
         print("\n  Likely matches with the inverter's 0x02 data frame "
               "(values move a little between the frame and the scan):")
@@ -275,13 +341,14 @@ def report(registers, errors, data_frames, payload_version, path):
             matches[field] = found
             print(f"    {field:22} frame value {value:7d}: {', '.join(found[:6]) if found else '-'}"
                   f"{' ...' if len(found) > 6 else ''}")
-    else:
-        print("\n  No 0x02 data frame was captured during the scan, so nothing to match against.")
+    elif not data_frames:
+        print("\n  No 0x02 data frame was captured, so nothing to match against.")
 
     with open(path, "w") as file:
         json.dump({
             "registers": {str(k): v for k, v in sorted(registers.items())},
-            "errors": errors,
+            "refused": [{"start": b[0], "count": b[1], "result": r}
+                        for b, r in sorted(results.items()) if not isinstance(r, list)],
             "data_frames": [f.hex() for f in data_frames],
             "matches": matches,
         }, file, indent=1)
@@ -301,7 +368,7 @@ def main():
     parser.add_argument("host", help="IP address of the RS485-to-TCP bridge (e.g. the EW11)")
     parser.add_argument("--port", type=int, default=502)
     parser.add_argument("--listen", type=int, default=None,
-                        help="seconds to listen first (default 600, or 40 with --send)")
+                        help="seconds to listen first (default 600, 40 with --send, 0 with --scan)")
     parser.add_argument("--send", action="store_true", help="also send read requests after listening")
     parser.add_argument("--scan", type=parse_range, metavar="START-END",
                         help="read this input register range and match it with the data frame")
@@ -310,15 +377,18 @@ def main():
     parser.add_argument("--payload-version", type=int, default=0, choices=(0, 1))
     args = parser.parse_args()
     if args.listen is None:
-        args.listen = SEND_LISTEN_SECONDS if (args.send or args.scan) else LISTEN_SECONDS
+        args.listen = 0 if args.scan else SEND_LISTEN_SECONDS if args.send else LISTEN_SECONDS
 
     print(f"Connecting to {args.host}:{args.port} ...")
     sock = socket.create_connection((args.host, args.port), timeout=10)
     print("Connected.\n")
 
-    then = ", then sending read requests" if (args.send or args.scan) else " (nothing is sent)"
-    print(f"1) Listening for {args.listen}s to everything on the bus{then}:")
-    buffer = receive(sock, args.listen)
+    listened = []
+    buffer = b""
+    if args.listen:
+        then = ", then sending read requests" if (args.send or args.scan) else " (nothing is sent)"
+        print(f"1) Listening for {args.listen}s to everything on the bus{then}:")
+        buffer = receive(sock, args.listen, collected=listened)
 
     if args.send:
         print("\n2) Sending read requests:")
@@ -337,10 +407,9 @@ def main():
 
     if args.scan:
         start, end = args.scan
-        buffer, registers, errors, data_frames = scan(
-            sock, buffer, start, end, args.function, args.payload_version
-        )
-        report(registers, errors, data_frames, args.payload_version,
+        data_frames = [f for f in listened if f[2] == 0x02 and crc_ok(f)]
+        buffer, registers, results = scan(sock, buffer, start, end, args.function, data_frames)
+        report(registers, results, data_frames, args.payload_version,
                f"foxess_scan_{start}-{end - 1}_{time.strftime('%Y%m%d-%H%M%S')}.json")
 
     sock.close()
