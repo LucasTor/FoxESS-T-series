@@ -73,7 +73,8 @@ def describe(frame: bytes) -> str:
     if function == 0x06 and crc_ok:
         text += f"\n      SERIAL NUMBER: {frame[9:-4].decode('ascii', 'replace')}"
     if function == 0x01 and crc_ok:
-        text += f"\n      INFO: {[part.decode('ascii', 'replace') for part in frame[9:-4].split(b'\0') if part]}"
+        parts = [part.decode("ascii", "replace") for part in frame[9:-4].split(b"\x00") if part]
+        text += f"\n      INFO: {parts}"
     if function == 0x11 and crc_ok:
         data = frame[9:-4]
         if len(data) >= 6:
