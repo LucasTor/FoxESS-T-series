@@ -10,9 +10,9 @@ including the factory Wi-Fi dongle's requests and the inverter's replies if
 the dongle is connected in parallel. Listening never transmits anything.
 
 --send also transmits a few Modbus "read registers" requests (function 0x04
-or 0x03) after listening. These cannot change inverter settings, but on a bus
-shared with the factory dongle they can collide with its traffic, so the
-cloud may miss a data point. Only use it after listening.
+or 0x03) after listening. These cannot change inverter settings. Each one is
+sent 2 seconds after an inverter frame, in the quiet part of its 30-second
+cycle, so it is unlikely to collide with traffic on a shared bus.
 
 Run it during daylight, while the inverter is on, and paste the whole output
 into the GitHub issue.
@@ -22,7 +22,8 @@ import socket
 import time
 
 LISTEN_SECONDS = 600
-REPLY_WAIT_SECONDS = 6
+REPLY_WAIT_SECONDS = 10
+SEND_DELAY_SECONDS = 2
 REQUEST_ID = bytes.fromhex("C5ECC56C")  # the ID seen in the S-series capture
 
 MARKERS = {
@@ -58,6 +59,10 @@ def describe(frame: bytes) -> str:
     length = int.from_bytes(frame[7:9], "big")
     crc_ok = frame[-4:-2] == crc16(frame[2:-4])
     text = f"function 0x{function:02x}, {len(frame)} bytes, declared length {length}, checksum {'ok' if crc_ok else 'BAD'}"
+    if function == 0x06 and crc_ok:
+        text += f"\n      SERIAL NUMBER: {frame[9:-4].decode('ascii', 'replace')}"
+    if function == 0x01 and crc_ok:
+        text += f"\n      INFO: {[part.decode('ascii', 'replace') for part in frame[9:-4].split(b'\0') if part]}"
     if function == 0x11 and crc_ok:
         data = frame[9:-4]
         if len(data) >= 6:
@@ -99,7 +104,7 @@ def split_frames(buffer: bytes):
         buffer = buffer[end + 2:]
 
 
-def receive(sock, seconds, buffer=b""):
+def receive(sock, seconds, buffer=b"", until_frame=False):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         sock.settimeout(max(0.1, deadline - time.monotonic()))
@@ -115,6 +120,8 @@ def receive(sock, seconds, buffer=b""):
         for frame in frames:
             print(f"  [{time.strftime('%H:%M:%S')}] {describe(frame)}")
             print(f"      hex: {frame.hex()}")
+        if until_frame and frames:
+            break
     return buffer
 
 
@@ -138,6 +145,11 @@ def main():
         for name, (start_marker, end_marker) in MARKERS.items():
             for function, register, count in READS:
                 request = build_request(start_marker, end_marker, function, register, count)
+                # The inverter pushes a frame every 30 seconds. Send right after
+                # one so the request lands in the quiet gap instead of colliding.
+                print("\n  (waiting for the next inverter frame before sending)")
+                buffer = receive(sock, 45, buffer, until_frame=True)
+                time.sleep(SEND_DELAY_SECONDS)
                 print(f"\n  -> {name}, Modbus function 0x{function:02x}, registers {register}+{count}")
                 print(f"      sent: {request.hex()}")
                 sock.sendall(request)
