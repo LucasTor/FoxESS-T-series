@@ -28,6 +28,17 @@ _LOGGER = logging.getLogger(__name__)
 
 START_MARKER = b"\x7e\x7e"
 END_MARKER = b"\xe7\xe7"
+# Function code of the periodic data frame the integration decodes.
+DATA_FUNCTION_CODE = 0x02
+# Start marker, function code, 4-byte timestamp and 2-byte data length.
+HEADER_LENGTH = 9
+# Header plus 2-byte checksum and end marker around the data.
+FRAME_OVERHEAD = HEADER_LENGTH + 4
+# Declared data lengths above this are treated as corrupt.
+MAX_DATA_LENGTH = 1024
+# Bytes buffered without finding a frame before the stream is reset.
+MAX_BUFFER = 8192
+READ_CHUNK = 512
 
 CONNECT_TIMEOUT = 10
 # Seconds without a complete frame before the values are zeroed. The inverter
@@ -36,6 +47,43 @@ NO_DATA_TIMEOUT = 300
 RECONNECT_DELAY = 60
 
 ESPHOME_SCHEME = "esphome-hass://"
+
+
+def extract_frame(buffer: bytes) -> tuple[bytes | None, int]:
+    """Find the next frame in buffer.
+
+    Returns (frame, consumed): the frame bytes (None when more data is needed)
+    and how many bytes to drop from the front of the buffer.
+
+    Frames are cut using the data length in their header, because the end
+    marker bytes can also appear inside the data or the checksum. When the
+    declared length does not end on an end marker (a corrupt frame), or for
+    other frame types whose layout is unknown, fall back to the first end
+    marker after the start marker.
+    """
+    start = buffer.find(START_MARKER)
+    if start == -1:
+        # Keep a trailing byte that could be the first half of a start marker.
+        keep = 1 if buffer.endswith(START_MARKER[:1]) else 0
+        return None, len(buffer) - keep
+    if start > 0:
+        return None, start
+
+    if len(buffer) < HEADER_LENGTH:
+        return None, 0
+
+    data_length = int.from_bytes(buffer[7:9], "big")
+    if buffer[2] == DATA_FUNCTION_CODE and data_length <= MAX_DATA_LENGTH:
+        frame_length = data_length + FRAME_OVERHEAD
+        if len(buffer) < frame_length:
+            return None, 0
+        if buffer[frame_length - 2:frame_length] == END_MARKER:
+            return buffer[:frame_length], frame_length
+
+    end = buffer.find(END_MARKER, len(START_MARKER))
+    if end == -1:
+        return None, 0
+    return buffer[:end + 2], end + 2
 
 
 def is_serial_url(serial_port: str | None) -> bool:
@@ -67,6 +115,7 @@ class InverterReader:
         self.on_lost: Callable[[], None] = on_lost or (lambda: None)
 
         self._reader: asyncio.StreamReader | None = None
+        self._buffer = b""
         self._writer: asyncio.StreamWriter | None = None
         self._task: asyncio.Task | None = None
         self._last_message = time.monotonic()
@@ -155,6 +204,7 @@ class InverterReader:
         writer = self._writer
         self._reader = None
         self._writer = None
+        self._buffer = b""
         if writer is None:
             _LOGGER.debug("Disconnect requested but no connection is open")
             return
@@ -240,7 +290,7 @@ class InverterReader:
                 continue
             except asyncio.LimitOverrunError as error:
                 _LOGGER.warning(
-                    "Stream from %s exceeded %s bytes without an end marker, discarding buffer and reconnecting",
+                    "Stream from %s sent %s bytes without a complete frame, discarding buffer and reconnecting",
                     self.describe(), error.consumed,
                 )
                 await self.async_disconnect()
@@ -253,19 +303,35 @@ class InverterReader:
         if reader is None:
             raise ConnectionError("Not connected")
 
-        data = await reader.readuntil(END_MARKER)
-        _LOGGER.debug("Read %s bytes up to end marker: %s", len(data), data.hex())
+        # The buffer lives on the instance so a timeout cancelling this read
+        # does not lose bytes already received.
+        while True:
+            frame, consumed = extract_frame(self._buffer)
+            if consumed:
+                if frame is None:
+                    _LOGGER.debug(
+                        "Discarding %s bytes outside a frame: %s",
+                        consumed, self._buffer[:consumed].hex(),
+                    )
+                self._buffer = self._buffer[consumed:]
+            if frame is not None:
+                _LOGGER.debug("Read %s byte frame: %s", len(frame), frame.hex())
+                return frame
+            if consumed:
+                continue
 
-        start_index = data.find(START_MARKER)
-        if start_index == -1:
-            _LOGGER.debug("End marker hit with no start marker, discarding %s bytes", len(data))
-            self._frames_rejected += 1
-            return b""
-        if start_index > 0:
-            _LOGGER.debug(
-                "Discarding %s bytes before start marker: %s", start_index, data[:start_index].hex()
-            )
-        return data[start_index:]
+            if len(self._buffer) > MAX_BUFFER:
+                consumed = len(self._buffer)
+                self._buffer = b""
+                raise asyncio.LimitOverrunError(
+                    "No complete frame in buffered data", consumed
+                )
+
+            chunk = await reader.read(READ_CHUNK)
+            if not chunk:
+                partial, self._buffer = self._buffer, b""
+                raise asyncio.IncompleteReadError(partial, None)
+            self._buffer += chunk
 
     def _handle_frame(self, data: bytes) -> None:
         if not data:
