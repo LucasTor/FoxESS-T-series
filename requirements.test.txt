@@ -1,3 +1,8 @@
-pytest
-pytest-cov==2.9.0
+# Pins pytest, pytest-asyncio, pytest-cov and Home Assistant itself.
 pytest-homeassistant-custom-component
+# Integration requirement (manifest.json); not installed automatically in tests.
+serialx>=1.7.0
+# Needed by Home Assistant's usb component, a dependency of this integration.
+aiousbwatcher
+pyserial
+pyudev

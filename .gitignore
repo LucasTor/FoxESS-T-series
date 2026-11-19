@@ -3,3 +3,4 @@ custom_components/__pycache__
 custom_components/foxess_tseries/__pycache__
 test-*.py
 __pycache__/
+.coverage
